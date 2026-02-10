@@ -71,12 +71,13 @@ if (!canvas) {
 
   const material = new THREE.PointsMaterial({
     color: accent,
-    size: 0.03,
+    size: 0.032,
     sizeAttenuation: true,
     transparent: true,
     opacity: 0.28,
     depthWrite: false,
   });
+  material.blending = THREE.AdditiveBlending;
 
   const points = new THREE.Points(geometry, material);
   group.add(points);
@@ -110,11 +111,28 @@ if (!canvas) {
   let rafId = 0;
   const clock = new THREE.Clock();
 
+  const baseOpacity = material.opacity;
+  const baseSize = material.size;
+
   function renderFrame() {
     const t = clock.getElapsedTime();
-    group.rotation.y = t * 0.06;
-    group.rotation.x = Math.sin(t * 0.2) * 0.06;
-    knot.rotation.z = t * 0.08;
+
+    // Slow orbit-like camera drift (subtle but noticeable)
+    camera.position.x = Math.cos(t * 0.07) * 0.35;
+    camera.position.y = Math.sin(t * 0.09) * 0.22;
+    camera.lookAt(0, 0, 0);
+
+    // Background motion
+    group.rotation.y = t * 0.14;
+    group.rotation.x = Math.sin(t * 0.35) * 0.08;
+    points.rotation.z = t * 0.03;
+    knot.rotation.z = t * 0.18;
+    knot.rotation.y = t * 0.08;
+
+    // “Shimmer” without heavy per-particle updates
+    material.opacity = baseOpacity + (Math.sin(t * 1.3) * 0.06);
+    material.size = baseSize + (Math.sin(t * 0.9) * 0.004);
+
     renderer.render(scene, camera);
     rafId = requestAnimationFrame(renderFrame);
   }
