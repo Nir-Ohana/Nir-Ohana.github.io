@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Nir Ohana — Senior Software Engineer portfolio" />
+
+    <title>Nir Ohana | Portfolio</title>
+
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <header class="site-header">
+      <div class="container">
+        <div class="header-inner">
+          <div>
+            <p class="eyebrow">Portfolio</p>
+            <h1>👋 Hi there, I’m <span class="accent">Nir Ohana</span></h1>
+            <p class="subtitle">
+              Senior Software Engineer focused on scalable distributed systems, high-traffic
+              infrastructure, and AI-driven workflows.
+            </p>
+          </div>
+
+          <nav class="nav" aria-label="Primary">
+            <a href="#about">About</a>
+            <a href="#work">Current Work</a>
+            <a href="#projects">Projects</a>
+            <a href="#stack">Tech Stack</a>
+            <a href="#highlights">Highlights</a>
+            <a href="#contact">Contact</a>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <main id="content" class="container">
+      <section id="about" class="section">
+        <h2>About</h2>
+        <p>
+          I am a <strong>Senior Software Engineer</strong> with over 5 years of experience
+          architecting scalable, distributed systems and optimizing high-traffic infrastructure.
+          Currently, I'm building data-intensive microservices and AI-driven workflows at
+          <strong>Innovid</strong>.
+        </p>
+      </section>
+
+      <section id="work" class="section">
+        <h2>🔭 I’m currently working on</h2>
+        <ul class="list">
+          <li>
+            Architecting Kafka-based microservices for asynchronous communication and heavy loads.
+          </li>
+          <li>
+            Integrating Generative AI (Gemini API) to replace legacy ML models, reducing overhead and
+            latency.
+          </li>
+          <li>
+            Developing an <strong>AI-powered image editing platform</strong> with a focus on token
+            economy and secure storage.
+          </li>
+        </ul>
+      </section>
+
+      <section id="projects" class="section">
+        <h2>Projects</h2>
+
+        <article class="card">
+          <div class="card-title">
+            <h3>
+              <a href="https://zaffrai.com" target="_blank" rel="noreferrer">Zaffrai</a>
+            </h3>
+            <span class="pill">AI Image Editing SaaS</span>
+          </div>
+          <p>
+            Building an AI-powered image editing SaaS that lets users edit photos via natural
+            language (“No editor needed... just your thoughts”).
+          </p>
+          <ul class="list compact">
+            <li><strong>Key Features:</strong> Object removal, old photo restoration, generative edits.</li>
+            <li><strong>Stack:</strong> Python, Gemini API, React.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <div class="card-title">
+            <h3>Scalable Infrastructure</h3>
+            <span class="pill">Kafka Microservices</span>
+          </div>
+          <p>Architecting Kafka-based microservices for asynchronous communication and heavy loads.</p>
+        </article>
+      </section>
+
+      <section id="stack" class="section">
+        <h2>🛠 Tech Stack</h2>
+
+        <div class="grid">
+          <div class="card">
+            <h3>Languages</h3>
+            <p class="muted">Java, Kotlin, Python, TypeScript, JavaScript, SQL, PHP.</p>
+          </div>
+          <div class="card">
+            <h3>Infrastructure &amp; Cloud</h3>
+            <p class="muted">AWS, Docker, Kubernetes, Kafka, CI/CD (TeamCity/Jenkins).</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="exploring" class="section">
+        <h2>🌱 I’m currently exploring</h2>
+        <ul class="list">
+          <li>
+            <strong>Game Development:</strong> Building 2D casual games for Android using code-first
+            frameworks (Godot/Flame).
+          </li>
+          <li>
+            <strong>Self-Hosting:</strong> Setting up CI/CD pipelines for home server environments.
+          </li>
+        </ul>
+      </section>
+
+      <section id="highlights" class="section">
+        <h2>💼 Professional Highlights</h2>
+        <ul class="list">
+          <li>Reduced video encoding costs by <strong>80%</strong> through legacy flow optimization.</li>
+          <li>Delivered reporting platforms serving <strong>2,000+</strong> enterprise clients.</li>
+          <li>
+            Engineered Python/Django security tools for cybersecurity research teams.
+          </li>
+        </ul>
+      </section>
+
+      <section id="contact" class="section">
+        <h2>📫 How to reach me</h2>
+        <ul class="list">
+          <li>
+            📧 <a href="mailto:niroh3005@gmail.com">niroh3005@gmail.com</a>
+          </li>
+          <li>
+            🔗
+            <a
+              href="https://www.linkedin.com/in/nir-ohana-2355a8229/"
+              target="_blank"
+              rel="noreferrer"
+              >LinkedIn</a
+            >
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p class="muted">© <span id="year">2026</span> Nir Ohana</p>
+      </div>
+    </footer>
+
+    <script>
+      // Keep copyright current without any build tooling.
+      document.getElementById('year').textContent = String(new Date().getFullYear());
+    </script>
+  </body>
+</html>
