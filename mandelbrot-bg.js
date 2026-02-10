@@ -49,6 +49,7 @@ function mandelbrotHeight(cx, cy, maxIter) {
 
   // Smooth iteration count
   const zn = Math.sqrt(x2 + y2);
+  if (!Number.isFinite(zn) || zn <= 0) return 0;
   const nu = Math.log2(Math.log2(zn));
   const smooth = iter + 1 - nu;
 
@@ -99,37 +100,51 @@ if (!canvas) {
   const pos = geometry.attributes.position;
 
   const maxIter = 60;
-  // Map plane coords to complex plane region.
-  // Region: x in [-2.4, 1.2], y in [-1.35, 1.35]
-  const xMin = -2.4;
-  const xMax = 1.2;
-  const yMin = -1.35;
-  const yMax = 1.35;
 
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
+  // Base region, then we zoom into a point within the set.
+  // Start region: x in [-2.4, 1.2], y in [-1.35, 1.35]
+  const baseXMin = -2.4;
+  const baseXMax = 1.2;
+  const baseYMin = -1.35;
+  const baseYMax = 1.35;
 
-    const u = (x + width / 2) / width;
-    const v = (y + height / 2) / height;
+  // A visually interesting zoom center.
+  const centerX = -0.743643887;
+  const centerY = 0.131825904;
 
-    const cx = xMin + u * (xMax - xMin);
-    const cy = yMin + v * (yMax - yMin);
+  function rebuildHeights(zoomScale) {
+    const halfW = ((baseXMax - baseXMin) / 2) * zoomScale;
+    const halfH = ((baseYMax - baseYMin) / 2) * zoomScale;
+    const xMin = centerX - halfW;
+    const xMax = centerX + halfW;
+    const yMin = centerY - halfH;
+    const yMax = centerY + halfH;
 
-    const h = mandelbrotHeight(cx, cy, maxIter);
-    // Height scale is subtle so it reads as wireframe, not a big 3D object.
-    pos.setZ(i, h * 1.6);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+
+      const u = (x + width / 2) / width;
+      const v = (y + height / 2) / height;
+
+      const cx = xMin + u * (xMax - xMin);
+      const cy = yMin + v * (yMax - yMin);
+
+      const h = mandelbrotHeight(cx, cy, maxIter);
+      pos.setZ(i, h * 1.6);
+    }
+
+    pos.needsUpdate = true;
   }
 
-  pos.needsUpdate = true;
-  geometry.computeVertexNormals();
+  rebuildHeights(1);
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.rotation.x = -Math.PI / 2.75;
   group.add(mesh);
 
   // A second, slightly offset mesh adds density (still subtle).
-  const mesh2 = new THREE.Mesh(geometry.clone(), material.clone());
+  const mesh2 = new THREE.Mesh(geometry, material.clone());
   mesh2.material.opacity = 0.08;
   mesh2.scale.set(1.01, 1.01, 1);
   mesh2.position.y = -0.04;
@@ -152,8 +167,30 @@ if (!canvas) {
   let rafId = 0;
   const clock = new THREE.Clock();
 
+  // Recompute the heightfield at a capped rate to keep things smooth.
+  let acc = 0;
+  const rebuildHz = 12;
+  const rebuildInterval = 1 / rebuildHz;
+
+  const zoomCycleSeconds = 18;
+  const zoomStart = 1;
+  const zoomEnd = 0.02;
+
   function renderFrame() {
+    const dt = clock.getDelta();
     const t = clock.getElapsedTime();
+
+    // Zoom cycle: exponentially zoom in, then reset.
+    const p = (t % zoomCycleSeconds) / zoomCycleSeconds;
+    const zoomScale = Math.exp(Math.log(zoomEnd / zoomStart) * p) * zoomStart;
+
+    // Only rebuild a few times per second.
+    acc += dt;
+    if (acc >= rebuildInterval) {
+      acc = 0;
+      rebuildHeights(zoomScale);
+    }
+
     // Slow drift; stays readable behind text.
     group.rotation.y = t * 0.05;
     group.rotation.z = Math.sin(t * 0.2) * 0.03;
