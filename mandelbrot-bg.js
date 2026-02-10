@@ -122,6 +122,23 @@ function initMandelbrotBackground() {
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   scene.add(quad);
 
+  const centerValue = material.uniforms.u_center.value;
+  const baseCenterX = -0.743643887;
+  const baseCenterY = 0.131825904;
+
+  function updateCenter(progress, timeSeconds) {
+    // Follow an interesting path near the "tip"-like boundary region (seahorse valley):
+    // a gentle spiral whose radius shrinks as we zoom in.
+    const wobble = 0.12 * Math.sin(timeSeconds * 0.08);
+    const angle = 2 * Math.PI * (progress * 1.35 + wobble);
+    const radius = 0.0022 * Math.pow(1 - progress, 1.15) + 0.00008;
+
+    const dx = Math.cos(angle) * radius;
+    const dy = Math.sin(angle) * radius * 0.75;
+
+    centerValue.set(baseCenterX + dx, baseCenterY + dy);
+  }
+
   let qualityScale = 1;
   let lastW = 0;
   let lastH = 0;
@@ -188,6 +205,7 @@ function initMandelbrotBackground() {
     const scale = Math.exp(Math.log(scaleEnd / scaleStart) * p) * scaleStart;
 
     material.uniforms.u_time.value = t;
+    updateCenter(p, t);
     material.uniforms.u_scale.value = scale;
     renderer.render(scene, camera);
     rafId = requestAnimationFrame(renderFrame);
