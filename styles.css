@@ -19,9 +19,13 @@ body {
   height: 100%;
 }
 
+html {
+  background: var(--bg);
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  background: transparent;
   color: var(--fg);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji";
@@ -31,7 +35,7 @@ body {
 .bg-layer {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
 }
 
@@ -77,8 +81,16 @@ button:focus-visible {
 }
 
 .site-header {
+  position: relative;
+  z-index: 1;
   border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  background: rgb(255 255 255 / 0.82);
+  backdrop-filter: blur(8px);
+}
+
+main {
+  position: relative;
+  z-index: 1;
 }
 
 .header-inner {
@@ -181,7 +193,8 @@ h3 {
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--card);
+  background: rgb(249 250 251 / 0.78);
+  backdrop-filter: blur(8px);
 }
 
 .card-title {
@@ -205,8 +218,12 @@ h3 {
 }
 
 .site-footer {
+  position: relative;
+  z-index: 1;
   border-top: 1px solid var(--border);
   padding: 18px 0;
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(8px);
 }
 
 @media (max-width: 780px) {
