@@ -203,10 +203,11 @@ function initMandelbrotBackground() {
   let frameCount = 0;
 
   // Classic-style infinite zoom: continuously reduce scale, then reset.
-  const zoomCycleSeconds = 22;
-  // Start closer-in so the seahorse valley is visible earlier in the cycle.
+  // Longer cycle = slower zoom + less frequent reset.
+  const zoomCycleSeconds = 48;
+  // Start closer-in so the seahorse valley is visible early, and end much deeper.
   const scaleStart = 0.38;
-  const scaleEnd = 0.00004;
+  const scaleEnd = 0.000006;
 
   function renderFrame() {
     const dt = clock.getDelta();
