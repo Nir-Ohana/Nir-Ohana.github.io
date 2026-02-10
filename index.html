@@ -16,6 +16,103 @@
       <canvas id="bg-canvas"></canvas>
     </div>
 
+    <div class="cowboy-wrap" aria-hidden="true">
+      <svg
+        class="cowboy"
+        viewBox="0 0 64 64"
+        width="128"
+        height="128"
+        role="presentation"
+        focusable="false"
+        xmlns="http://www.w3.org/2000/svg"
+        shape-rendering="crispEdges"
+      >
+        <!-- Frame 1 -->
+        <g class="frame frame-1">
+          <!-- horse body -->
+          <rect x="12" y="32" width="34" height="14" fill="#6b3f2a" />
+          <rect x="40" y="30" width="14" height="10" fill="#6b3f2a" />
+          <rect x="50" y="32" width="10" height="8" fill="#4b2c1d" />
+          <rect x="54" y="34" width="6" height="6" fill="#2b1b12" />
+
+          <!-- horse legs -->
+          <rect x="16" y="44" width="6" height="14" fill="#3a2418" />
+          <rect x="26" y="44" width="6" height="12" fill="#3a2418" />
+          <rect x="36" y="44" width="6" height="14" fill="#3a2418" />
+          <rect x="44" y="44" width="6" height="12" fill="#3a2418" />
+
+          <!-- hooves -->
+          <rect x="16" y="58" width="6" height="3" fill="#111827" />
+          <rect x="26" y="56" width="6" height="3" fill="#111827" />
+          <rect x="36" y="58" width="6" height="3" fill="#111827" />
+          <rect x="44" y="56" width="6" height="3" fill="#111827" />
+
+          <!-- tail -->
+          <rect x="10" y="34" width="4" height="6" fill="#2b1b12" />
+          <rect x="8" y="36" width="3" height="6" fill="#2b1b12" />
+
+          <!-- saddle -->
+          <rect x="26" y="30" width="12" height="6" fill="#111827" opacity="0.9" />
+          <rect x="28" y="28" width="8" height="4" fill="#111827" opacity="0.9" />
+
+          <!-- cowboy -->
+          <rect x="30" y="18" width="8" height="8" fill="#f5d0a7" />
+          <rect x="28" y="14" width="12" height="4" fill="#5b3a1f" />
+          <rect x="30" y="12" width="8" height="4" fill="#5b3a1f" />
+          <rect x="28" y="26" width="12" height="8" fill="#1d4ed8" opacity="0.9" />
+          <rect x="26" y="30" width="4" height="6" fill="#1d4ed8" opacity="0.9" />
+          <rect x="40" y="30" width="4" height="6" fill="#1d4ed8" opacity="0.9" />
+          <rect x="30" y="34" width="10" height="6" fill="#374151" opacity="0.95" />
+
+          <!-- reins -->
+          <rect x="42" y="26" width="2" height="10" fill="#111827" opacity="0.7" />
+          <rect x="44" y="26" width="2" height="10" fill="#111827" opacity="0.7" />
+        </g>
+
+        <!-- Frame 2 (slightly different legs/tail for a riding illusion) -->
+        <g class="frame frame-2">
+          <!-- horse body -->
+          <rect x="12" y="32" width="34" height="14" fill="#6b3f2a" />
+          <rect x="40" y="30" width="14" height="10" fill="#6b3f2a" />
+          <rect x="50" y="32" width="10" height="8" fill="#4b2c1d" />
+          <rect x="54" y="34" width="6" height="6" fill="#2b1b12" />
+
+          <!-- horse legs (swap a couple heights) -->
+          <rect x="16" y="44" width="6" height="12" fill="#3a2418" />
+          <rect x="26" y="44" width="6" height="14" fill="#3a2418" />
+          <rect x="36" y="44" width="6" height="12" fill="#3a2418" />
+          <rect x="44" y="44" width="6" height="14" fill="#3a2418" />
+
+          <!-- hooves -->
+          <rect x="16" y="56" width="6" height="3" fill="#111827" />
+          <rect x="26" y="58" width="6" height="3" fill="#111827" />
+          <rect x="36" y="56" width="6" height="3" fill="#111827" />
+          <rect x="44" y="58" width="6" height="3" fill="#111827" />
+
+          <!-- tail (slightly shifted) -->
+          <rect x="10" y="33" width="4" height="6" fill="#2b1b12" />
+          <rect x="8" y="34" width="3" height="6" fill="#2b1b12" />
+
+          <!-- saddle -->
+          <rect x="26" y="30" width="12" height="6" fill="#111827" opacity="0.9" />
+          <rect x="28" y="28" width="8" height="4" fill="#111827" opacity="0.9" />
+
+          <!-- cowboy -->
+          <rect x="30" y="18" width="8" height="8" fill="#f5d0a7" />
+          <rect x="28" y="14" width="12" height="4" fill="#5b3a1f" />
+          <rect x="30" y="12" width="8" height="4" fill="#5b3a1f" />
+          <rect x="28" y="26" width="12" height="8" fill="#1d4ed8" opacity="0.9" />
+          <rect x="26" y="30" width="4" height="6" fill="#1d4ed8" opacity="0.9" />
+          <rect x="40" y="30" width="4" height="6" fill="#1d4ed8" opacity="0.9" />
+          <rect x="30" y="34" width="10" height="6" fill="#374151" opacity="0.95" />
+
+          <!-- reins -->
+          <rect x="42" y="26" width="2" height="10" fill="#111827" opacity="0.7" />
+          <rect x="44" y="26" width="2" height="10" fill="#111827" opacity="0.7" />
+        </g>
+      </svg>
+    </div>
+
     <header class="site-header">
       <div class="container">
         <div class="header-inner">
@@ -26,15 +123,6 @@
               infrastructure, and AI-driven workflows.
             </p>
           </div>
-
-          <nav class="nav" aria-label="Primary">
-            <a href="#about">About</a>
-            <a href="#work">Current Work</a>
-            <a href="#projects">Projects</a>
-            <a href="#stack">Tech Stack</a>
-            <a href="#highlights">Highlights</a>
-            <a href="#contact">Contact</a>
-          </nav>
         </div>
       </div>
     </header>
