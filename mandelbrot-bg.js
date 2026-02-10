@@ -59,6 +59,16 @@ function initMandelbrotBackground() {
         return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
       }
 
+      vec3 palette(float t) {
+        // Cosine palette for classic fractal gradients.
+        // Tuned toward cyan/blue + purple + warm highlights.
+        vec3 a = vec3(0.22, 0.30, 0.55);
+        vec3 b = vec3(0.55, 0.40, 0.28);
+        vec3 c = vec3(1.00, 1.00, 1.00);
+        vec3 d = vec3(0.00, 0.12, 0.25);
+        return clamp(a + b * cos(6.2831853 * (c * t + d)), 0.0, 1.0);
+      }
+
       void main() {
         // Map UV to complex plane (top-down view).
         vec2 p = vUv * 2.0 - 1.0;
@@ -85,7 +95,7 @@ function initMandelbrotBackground() {
           it = float(i);
         }
 
-        // Inside set: render very faintly.
+        // Inside set: render as a faint silhouette.
         float inside = step(m2, 4.0);
 
         // Smooth iteration count for contour lines.
@@ -96,25 +106,32 @@ function initMandelbrotBackground() {
           smoothIt = it + 1.0 - nu;
         }
 
-        // Wireframe-like contours (isolines) outside the set.
         float denom = max(1.0, float(u_maxIter));
-        float v = smoothIt / denom;
-        float bands = 26.0;
-        float f = abs(fract(v * bands) - 0.5);
+        float v = clamp(smoothIt / denom, 0.0, 1.0);
 
-        // Animate slight breathing to avoid looking static between zoom rebuilds.
-        float wobble = 0.012 * sin(u_time * 0.6);
-        float thickness = 0.040 + wobble;
-        float line = 1.0 - smoothstep(thickness, thickness + 0.012, f);
+        // Add a tiny animated phase shift so the palette doesn't look frozen.
+        float phase = 0.02 * sin(u_time * 0.35);
+        vec3 col = palette(v + phase);
 
-        float alphaOutside = line * u_opacity;
-        float alphaInside = u_opacity * 0.05;
+        // Slight tint toward site accent so it still feels integrated.
+        col = mix(col, u_color, 0.16);
+
+        // Edge emphasis: a soft highlight where escape happens early.
+        float edge = smoothstep(0.0, 0.65, 1.0 - v);
+        col = mix(col, col * (1.0 + 0.35 * edge), 0.35);
+
+        // Keep the set interior dark.
+        vec3 insideCol = vec3(0.0);
+        col = mix(col, insideCol, inside);
+
+        float alphaOutside = u_opacity;
+        float alphaInside = u_opacity * 0.16;
         float alpha = mix(alphaOutside, alphaInside, inside);
 
-        // Fade out the far exterior a touch so the UI stays readable.
-        alpha *= smoothstep(1.8, 0.2, length(p));
+        // Fade out the far exterior so the UI stays readable.
+        alpha *= smoothstep(1.9, 0.25, length(p));
 
-        gl_FragColor = vec4(u_color, alpha);
+        gl_FragColor = vec4(col, alpha);
       }
     `,
   });
