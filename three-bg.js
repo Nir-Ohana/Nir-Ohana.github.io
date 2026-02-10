@@ -31,6 +31,17 @@ if (!canvas) {
   // Graceful no-op when WebGL isn't available.
 } else {
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+  const forceMotion =
+    new URLSearchParams(window.location.search).get('motion') === '1' ||
+    window.localStorage.getItem('forceMotion') === '1';
+
+  const animate = forceMotion || !reducedMotion;
+  if (!animate) {
+    // Helpful debugging when users expect motion.
+    console.info(
+      '[three-bg] Animation disabled due to prefers-reduced-motion. To test animation, open the page with ?motion=1'
+    );
+  }
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -123,11 +134,11 @@ if (!canvas) {
     camera.lookAt(0, 0, 0);
 
     // Background motion
-    group.rotation.y = t * 0.14;
-    group.rotation.x = Math.sin(t * 0.35) * 0.08;
+    group.rotation.y = t * 0.2;
+    group.rotation.x = Math.sin(t * 0.45) * 0.1;
     points.rotation.z = t * 0.03;
-    knot.rotation.z = t * 0.18;
-    knot.rotation.y = t * 0.08;
+    knot.rotation.z = t * 0.22;
+    knot.rotation.y = t * 0.12;
 
     // “Shimmer” without heavy per-particle updates
     material.opacity = baseOpacity + (Math.sin(t * 1.3) * 0.06);
@@ -139,7 +150,7 @@ if (!canvas) {
 
   // Render once for reduced motion, otherwise animate.
   renderer.render(scene, camera);
-  if (!reducedMotion) {
+  if (animate) {
     rafId = requestAnimationFrame(renderFrame);
   }
 
@@ -150,7 +161,7 @@ if (!canvas) {
       if (document.hidden) {
         if (rafId) cancelAnimationFrame(rafId);
         rafId = 0;
-      } else if (!reducedMotion && !rafId) {
+      } else if (animate && !rafId) {
         clock.start();
         rafId = requestAnimationFrame(renderFrame);
       }
