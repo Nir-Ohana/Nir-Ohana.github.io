@@ -62,12 +62,13 @@ function buildMobiusSurfaceGeometry({
   return geometry;
 }
 
-function initMobiusBackground() {
+export function initMobiusBackground(options = {}) {
   const canvas = getCanvas('bg-canvas');
   if (!canvas) return;
   if (!supportsWebGL()) return;
 
   const reducedMotion = getReducedMotion();
+  const animate = Boolean(options.animate ?? true) && !reducedMotion;
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -124,7 +125,16 @@ function initMobiusBackground() {
   }
 
   resize();
-  window.addEventListener('resize', resize, { passive: true });
+  function renderOnce() {
+    renderer.render(scene, camera);
+  }
+
+  function onResize() {
+    resize();
+    if (!animate) renderOnce();
+  }
+
+  window.addEventListener('resize', onResize, { passive: true });
 
   let rafId = 0;
   const clock = new THREE.Clock();
@@ -140,22 +150,35 @@ function initMobiusBackground() {
     rafId = requestAnimationFrame(renderFrame);
   }
 
-  renderer.render(scene, camera);
-  if (!reducedMotion) rafId = requestAnimationFrame(renderFrame);
+  function onVisibilityChange() {
+    if (!animate) return;
 
-  document.addEventListener(
-    'visibilitychange',
-    () => {
-      if (document.hidden) {
-        if (rafId) cancelAnimationFrame(rafId);
-        rafId = 0;
-      } else if (!reducedMotion && !rafId) {
-        clock.start();
-        rafId = requestAnimationFrame(renderFrame);
-      }
-    },
-    { passive: true }
-  );
+    if (document.hidden) {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = 0;
+    } else if (!rafId) {
+      clock.start();
+      rafId = requestAnimationFrame(renderFrame);
+    }
+  }
+
+  renderOnce();
+  if (animate) rafId = requestAnimationFrame(renderFrame);
+
+  document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
+
+  return function cleanup() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('resize', onResize);
+
+    surface?.dispose?.();
+    wire.geometry?.dispose?.();
+    edges.geometry?.dispose?.();
+    lineMaterial?.dispose?.();
+    innerMaterial?.dispose?.();
+    renderer?.dispose?.();
+  };
 }
-
-initMobiusBackground();

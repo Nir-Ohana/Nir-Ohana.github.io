@@ -1,12 +1,13 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { getAccentColorNumber, getCanvas, getReducedMotion, supportsWebGL } from './bg-utils.js';
 
-function initMandelbrotBackground() {
+export function initMandelbrotBackground(options = {}) {
   const canvas = getCanvas('bg-canvas');
   if (!canvas) return;
   if (!supportsWebGL()) return;
 
   const reducedMotion = getReducedMotion();
+  const animate = Boolean(options.animate ?? true) && !reducedMotion;
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -195,7 +196,6 @@ function initMandelbrotBackground() {
   }
 
   resize();
-  window.addEventListener('resize', resize, { passive: true });
 
   let rafId = 0;
   const clock = new THREE.Clock();
@@ -209,11 +209,22 @@ function initMandelbrotBackground() {
   const scaleStart = 0.38;
   const scaleEnd = 0.000006;
 
+  function renderOnce(timeSeconds = 0) {
+    const t = timeSeconds;
+    const p = (t % zoomCycleSeconds) / zoomCycleSeconds;
+    const scale = Math.exp(Math.log(scaleEnd / scaleStart) * p) * scaleStart;
+
+    material.uniforms.u_time.value = t;
+    updateCenter(p, t);
+    material.uniforms.u_scale.value = scale;
+    renderer.render(scene, camera);
+  }
+
   function renderFrame() {
     const dt = clock.getDelta();
     const t = clock.getElapsedTime();
 
-    if (!reducedMotion) {
+    if (animate) {
       const frameMs = Math.min(100, dt * 1000);
       avgFrameMs = avgFrameMs * 0.9 + frameMs * 0.1;
       frameCount++;
@@ -232,32 +243,44 @@ function initMandelbrotBackground() {
       }
     }
 
-    const p = (t % zoomCycleSeconds) / zoomCycleSeconds;
-    const scale = Math.exp(Math.log(scaleEnd / scaleStart) * p) * scaleStart;
-
-    material.uniforms.u_time.value = t;
-    updateCenter(p, t);
-    material.uniforms.u_scale.value = scale;
-    renderer.render(scene, camera);
+    renderOnce(t);
     rafId = requestAnimationFrame(renderFrame);
   }
 
-  renderer.render(scene, camera);
-  if (!reducedMotion) rafId = requestAnimationFrame(renderFrame);
+  function onResize() {
+    resize();
+    if (!animate) renderOnce(0);
+  }
 
-  document.addEventListener(
-    'visibilitychange',
-    () => {
-      if (document.hidden) {
-        if (rafId) cancelAnimationFrame(rafId);
-        rafId = 0;
-      } else if (!reducedMotion && !rafId) {
-        clock.start();
-        rafId = requestAnimationFrame(renderFrame);
-      }
-    },
-    { passive: true }
-  );
+  window.addEventListener('resize', onResize, { passive: true });
+
+  function onVisibilityChange() {
+    if (!animate) return;
+
+    if (document.hidden) {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = 0;
+    } else if (!rafId) {
+      clock.start();
+      rafId = requestAnimationFrame(renderFrame);
+    }
+  }
+
+  // Initial draw.
+  renderOnce(0);
+  if (animate) rafId = requestAnimationFrame(renderFrame);
+
+  document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
+
+  return function cleanup() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('resize', onResize);
+
+    quad.geometry?.dispose?.();
+    material?.dispose?.();
+    renderer?.dispose?.();
+  };
 }
-
-initMandelbrotBackground();
