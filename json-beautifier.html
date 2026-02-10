@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="JSON Beautifier — format JSON and copy the result" />
+
+    <title>JSON Beautifier | Nir Ohana</title>
+
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <div class="bg-layer" aria-hidden="true">
+      <canvas id="bg-canvas"></canvas>
+    </div>
+
+    <header class="site-header">
+      <div class="container">
+        <div class="header-inner">
+          <div>
+            <h1>JSON Beautifier</h1>
+            <p class="subtitle">Paste JSON, format it, copy the result.</p>
+          </div>
+
+          <button
+            type="button"
+            class="nav-toggle"
+            aria-label="Open menu"
+            aria-controls="site-menu-panel"
+            aria-expanded="false"
+            data-menu-toggle
+          >
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="nav-overlay" hidden data-menu-overlay></div>
+
+    <aside
+      id="site-menu-panel"
+      class="nav-panel"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="site-menu-title"
+      data-menu-panel
+    >
+      <div class="nav-panel-header">
+        <h2 id="site-menu-title" class="sr-only">Site menu</h2>
+        <button type="button" class="nav-close" aria-label="Close menu" data-menu-close>
+          ×
+        </button>
+      </div>
+
+      <nav class="nav-links" aria-label="Primary">
+        <a href="./index.html">Home</a>
+        <a href="./json-beautifier.html" aria-current="page">JSON Beautifier</a>
+      </nav>
+    </aside>
+
+    <main id="content" class="container">
+      <header class="page-header">
+        <h2>Formatter</h2>
+        <p class="muted">Input stays untouched on errors.</p>
+      </header>
+
+      <section class="panel" aria-label="JSON formatter">
+        <div class="tool-grid">
+          <div class="field">
+            <label for="jsonInput">Input JSON</label>
+            <textarea
+              id="jsonInput"
+              class="textarea"
+              spellcheck="false"
+              inputmode="text"
+              aria-describedby="status"
+              placeholder='{"hello":"world"}'
+            ></textarea>
+          </div>
+
+          <div class="field">
+            <label for="jsonOutput">Beautified output</label>
+            <textarea
+              id="jsonOutput"
+              class="textarea"
+              readonly
+              spellcheck="false"
+              aria-describedby="status"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="actions" role="group" aria-label="Actions">
+          <button id="btnBeautify" class="btn btn-primary" type="button">Beautify</button>
+          <button id="btnCopy" class="btn" type="button" disabled>Copy output</button>
+          <button id="btnClear" class="btn" type="button">Clear</button>
+        </div>
+
+        <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p class="muted">© <span id="year">2026</span> Nir Ohana</p>
+      </div>
+    </footer>
+
+    <script type="module" src="./site.js"></script>
+    <script type="module" src="./json-beautifier.js"></script>
+    <script type="module" src="./three-bg.js"></script>
+  </body>
+</html>

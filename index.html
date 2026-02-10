@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Nir Ohana — Senior Software Engineer portfolio" />
+    <meta name="description" content="Nir Ohana — Software Engineer portfolio" />
 
     <title>Nir Ohana | Portfolio</title>
 
@@ -26,9 +26,46 @@
               infrastructure, and AI-driven workflows.
             </p>
           </div>
+
+          <button
+            type="button"
+            class="nav-toggle"
+            aria-label="Open menu"
+            aria-controls="site-menu-panel"
+            aria-expanded="false"
+            data-menu-toggle
+          >
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+          </button>
         </div>
       </div>
     </header>
+
+    <div class="nav-overlay" hidden data-menu-overlay></div>
+
+    <aside
+      id="site-menu-panel"
+      class="nav-panel"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="site-menu-title"
+      data-menu-panel
+    >
+      <div class="nav-panel-header">
+        <h2 id="site-menu-title" class="sr-only">Site menu</h2>
+        <button type="button" class="nav-close" aria-label="Close menu" data-menu-close>
+          ×
+        </button>
+      </div>
+
+      <nav class="nav-links" aria-label="Primary">
+        <a href="./index.html">Home</a>
+        <a href="./json-beautifier.html">JSON Beautifier</a>
+      </nav>
+    </aside>
 
     <main id="content" class="container">
       <section id="about" class="section">
@@ -137,11 +174,7 @@
       </div>
     </footer>
 
-    <script>
-      // Keep copyright current without any build tooling.
-      document.getElementById('year').textContent = String(new Date().getFullYear());
-    </script>
-
+    <script type="module" src="./site.js"></script>
     <script type="module" src="./three-bg.js"></script>
   </body>
 </html>
