@@ -123,20 +123,32 @@ function initMandelbrotBackground() {
   scene.add(quad);
 
   const centerValue = material.uniforms.u_center.value;
-  const baseCenterX = -0.743643887;
-  const baseCenterY = 0.131825904;
+  // Seahorse Valley (well-known deep-zoom location).
+  const targetCenterX = -0.743643887037151;
+  const targetCenterY = 0.13182590420533;
 
   function updateCenter(progress, timeSeconds) {
-    // Follow an interesting path near the "tip"-like boundary region (seahorse valley):
-    // a gentle spiral whose radius shrinks as we zoom in.
-    const wobble = 0.12 * Math.sin(timeSeconds * 0.08);
-    const angle = 2 * Math.PI * (progress * 1.35 + wobble);
-    const radius = 0.0022 * Math.pow(1 - progress, 1.15) + 0.00008;
+    // Keep the camera *in* the seahorse valley: spiral gently around the target
+    // with a small radius that shrinks as we zoom in.
+    const eased = progress * progress * (3 - 2 * progress); // smoothstep
+    const wobble = 0.02 * Math.sin(timeSeconds * 0.06);
+    const angle = 2 * Math.PI * (eased * 0.9 + wobble);
+
+    const radiusStart = 0.00075;
+    const radiusEnd = 0.00002;
+    const radius = radiusStart * Math.pow(1 - eased, 1.5) + radiusEnd;
 
     const dx = Math.cos(angle) * radius;
-    const dy = Math.sin(angle) * radius * 0.75;
+    const dy = Math.sin(angle) * radius * 0.82;
 
-    centerValue.set(baseCenterX + dx, baseCenterY + dy);
+    // Ease in from a slightly wider "valley entrance" so the cycle clearly approaches the target.
+    const entranceX = targetCenterX - 0.0026;
+    const entranceY = targetCenterY - 0.0019;
+    const approach = Math.min(1, eased / 0.28);
+    const baseX = entranceX + (targetCenterX - entranceX) * approach;
+    const baseY = entranceY + (targetCenterY - entranceY) * approach;
+
+    centerValue.set(baseX + dx, baseY + dy);
   }
 
   let qualityScale = 1;
@@ -175,8 +187,9 @@ function initMandelbrotBackground() {
 
   // Classic-style infinite zoom: continuously reduce scale, then reset.
   const zoomCycleSeconds = 22;
-  const scaleStart = 1.05;
-  const scaleEnd = 0.0009;
+  // Start closer-in so the seahorse valley is visible earlier in the cycle.
+  const scaleStart = 0.38;
+  const scaleEnd = 0.00004;
 
   function renderFrame() {
     const dt = clock.getDelta();
