@@ -42,29 +42,23 @@ if (!canvas) {
 
   const scene = new THREE.Scene();
 
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-  camera.position.set(4.4, 4.0, 6.8);
+  // Orthographic camera makes it easier to “bounce” within view bounds.
+  const viewSize = 10;
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+  camera.position.set(0, 0, 20);
   camera.lookAt(0, 0, 0);
-
-  // Lighting (kept simple and neutral; background is transparent)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-  const key = new THREE.DirectionalLight(0xffffff, 0.65);
-  key.position.set(6, 7, 8);
-  scene.add(key);
-  const rim = new THREE.DirectionalLight(getAccentColorNumber(), 0.25);
-  rim.position.set(-7, -3, -6);
-  scene.add(rim);
 
   const group = new THREE.Group();
   scene.add(group);
 
-  // --- Rubik's cube (4x4) ---
-  const N = 4;
-  const cubieSize = 0.86;
-  const gap = 0.06;
+  // --- Rubik's cube (2x2) ---
+  const N = 2;
+  const cubieSize = 1.35;
+  const gap = 0.12;
   const step = cubieSize + gap;
   const center = (N - 1) / 2;
 
+  // Classic cube colors (kept slightly muted via opacity later).
   const COLORS = {
     U: 0xffffff,
     D: 0xfbbf24,
@@ -75,21 +69,28 @@ if (!canvas) {
     inner: 0x111827,
   };
 
-  function makeMat(color, { roughness = 0.35, metalness = 0.04 } = {}) {
-    return new THREE.MeshStandardMaterial({ color, roughness, metalness });
+  function makeMat(color, opacity) {
+    return new THREE.MeshBasicMaterial({
+      color,
+      wireframe: true,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    });
   }
 
   function solvedFaceMaterials(xi, yi, zi) {
     // three.js BoxGeometry material order: +x, -x, +y, -y, +z, -z
-    const mats = [
-      makeMat(xi === N - 1 ? COLORS.R : COLORS.inner),
-      makeMat(xi === 0 ? COLORS.L : COLORS.inner),
-      makeMat(yi === N - 1 ? COLORS.U : COLORS.inner),
-      makeMat(yi === 0 ? COLORS.D : COLORS.inner),
-      makeMat(zi === N - 1 ? COLORS.F : COLORS.inner),
-      makeMat(zi === 0 ? COLORS.B : COLORS.inner),
+    const outer = 0.22;
+    const inner = 0.06;
+    return [
+      makeMat(xi === N - 1 ? COLORS.R : COLORS.inner, xi === N - 1 ? outer : inner),
+      makeMat(xi === 0 ? COLORS.L : COLORS.inner, xi === 0 ? outer : inner),
+      makeMat(yi === N - 1 ? COLORS.U : COLORS.inner, yi === N - 1 ? outer : inner),
+      makeMat(yi === 0 ? COLORS.D : COLORS.inner, yi === 0 ? outer : inner),
+      makeMat(zi === N - 1 ? COLORS.F : COLORS.inner, zi === N - 1 ? outer : inner),
+      makeMat(zi === 0 ? COLORS.B : COLORS.inner, zi === 0 ? outer : inner),
     ];
-    return mats;
   }
 
   function indexToCoord(i) {
@@ -117,6 +118,9 @@ if (!canvas) {
       }
     }
   }
+
+  // Slight overall scale so it feels like a “background element”.
+  group.scale.setScalar(0.92);
 
   function rotateIndices(cubie, axis, dir) {
     const x = cubie.xi;
@@ -181,7 +185,7 @@ if (!canvas) {
     return { axis: move.axis, layer: move.layer, dir: -move.dir };
   }
 
-  function makeScramble(length = 26) {
+  function makeScramble(length = 14) {
     const moves = [];
     let last = null;
     for (let i = 0; i < length; i++) {
@@ -198,8 +202,16 @@ if (!canvas) {
 
   let current = null;
   let timeSinceLastMove = 0;
-  const movePauseSeconds = 0.12;
-  const moveDurationSeconds = 0.85;
+  const movePauseSeconds = 0.04;
+  const moveDurationSeconds = 0.32;
+
+  // Floating / bouncing motion within the viewport.
+  const floating = {
+    x: 0,
+    y: 0,
+    vx: 1.35,
+    vy: 1.05,
+  };
 
   function selectLayer(axis, layerIndex) {
     return cubies.filter((c) => (axis === 'x' ? c.xi : axis === 'y' ? c.yi : c.zi) === layerIndex);
@@ -250,7 +262,11 @@ if (!canvas) {
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(width, height, false);
 
-    camera.aspect = width / height;
+    const aspect = width / height;
+    camera.left = (-aspect * viewSize) / 2;
+    camera.right = (aspect * viewSize) / 2;
+    camera.top = viewSize / 2;
+    camera.bottom = -viewSize / 2;
     camera.updateProjectionMatrix();
   }
 
@@ -262,6 +278,37 @@ if (!canvas) {
 
   function renderFrame() {
     const dt = clock.getDelta();
+
+    // Gentle spin so the wireframe feels dynamic even between moves.
+    group.rotation.y += dt * 0.18;
+    group.rotation.x += dt * 0.11;
+
+    // Bounce around within view bounds.
+    const cubeRadius = ((N * step) / 2) * group.scale.x;
+    const margin = 0.6;
+    const xLimit = Math.max(0.5, camera.right - cubeRadius - margin);
+    const yLimit = Math.max(0.5, camera.top - cubeRadius - margin);
+
+    floating.x += floating.vx * dt;
+    floating.y += floating.vy * dt;
+
+    if (floating.x > xLimit) {
+      floating.x = xLimit;
+      floating.vx *= -1;
+    } else if (floating.x < -xLimit) {
+      floating.x = -xLimit;
+      floating.vx *= -1;
+    }
+
+    if (floating.y > yLimit) {
+      floating.y = yLimit;
+      floating.vy *= -1;
+    } else if (floating.y < -yLimit) {
+      floating.y = -yLimit;
+      floating.vy *= -1;
+    }
+
+    group.position.set(floating.x, floating.y, 0);
 
     if (current) {
       current.elapsed += dt;
