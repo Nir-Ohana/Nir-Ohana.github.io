@@ -12,6 +12,10 @@
   <body>
     <a class="skip-link" href="#content">Skip to content</a>
 
+    <div class="bg-layer" aria-hidden="true">
+      <canvas id="bg-canvas"></canvas>
+    </div>
+
     <header class="site-header">
       <div class="container">
         <div class="header-inner">
@@ -161,5 +165,7 @@
       // Keep copyright current without any build tooling.
       document.getElementById('year').textContent = String(new Date().getFullYear());
     </script>
+
+    <script type="module" src="./three-bg.js"></script>
   </body>
 </html>
