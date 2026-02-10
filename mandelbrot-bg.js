@@ -1,69 +1,12 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { getAccentColorNumber, getCanvas, getReducedMotion, supportsWebGL } from './bg-utils.js';
 
-function hexToThreeColorNumber(hex) {
-  if (!hex) return 0x1d4ed8;
-  const normalized = hex.trim().replace('#', '');
-  const isValid = /^[0-9a-fA-F]{6}$/.test(normalized);
-  return isValid ? Number.parseInt(normalized, 16) : 0x1d4ed8;
-}
+function initMandelbrotBackground() {
+  const canvas = getCanvas('bg-canvas');
+  if (!canvas) return;
+  if (!supportsWebGL()) return;
 
-function getAccentColorNumber() {
-  const value = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-  return hexToThreeColorNumber(value);
-}
-
-function supportsWebGL() {
-  try {
-    const canvas = document.createElement('canvas');
-    return Boolean(
-      window.WebGLRenderingContext &&
-        (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
-    );
-  } catch {
-    return false;
-  }
-}
-
-function mandelbrotHeight(cx, cy, maxIter) {
-  // Escape-time algorithm; returns a smooth-ish height.
-  let x = 0;
-  let y = 0;
-  let x2 = 0;
-  let y2 = 0;
-  let iter = 0;
-
-  // Early exit: cardioid/bulb tests to keep it fast.
-  const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
-  if (q * (q + (cx - 0.25)) <= 0.25 * cy * cy) return 0;
-  if ((cx + 1) * (cx + 1) + cy * cy <= 0.0625) return 0;
-
-  while (x2 + y2 <= 4 && iter < maxIter) {
-    y = 2 * x * y + cy;
-    x = x2 - y2 + cx;
-    x2 = x * x;
-    y2 = y * y;
-    iter++;
-  }
-
-  if (iter >= maxIter) return 0;
-
-  // Smooth iteration count
-  const zn = Math.sqrt(x2 + y2);
-  if (!Number.isFinite(zn) || zn <= 0) return 0;
-  const nu = Math.log2(Math.log2(zn));
-  const smooth = iter + 1 - nu;
-
-  // Normalize to [0,1]
-  return Math.min(1, Math.max(0, smooth / maxIter));
-}
-
-const canvas = document.getElementById('bg-canvas');
-if (!canvas) {
-  // No canvas on this page.
-} else if (!supportsWebGL()) {
-  // Graceful no-op when WebGL isn't available.
-} else {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+  const reducedMotion = getReducedMotion();
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -74,82 +17,102 @@ if (!canvas) {
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
-  camera.position.set(0, 2.2, 7.5);
-  camera.lookAt(0, 0, 0);
+  // Top-down orthographic view of a fullscreen shader quad.
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  camera.position.set(0, 0, 0.5);
 
-  const group = new THREE.Group();
-  scene.add(group);
-
-  // Wireframe Mandelbrot surface
   const accent = getAccentColorNumber();
-  const material = new THREE.MeshBasicMaterial({
-    color: accent,
-    wireframe: true,
+  const accentColor = new THREE.Color(accent);
+
+  const material = new THREE.ShaderMaterial({
     transparent: true,
-    opacity: 0.16,
     depthWrite: false,
+    uniforms: {
+      u_center: { value: new THREE.Vector2(-0.743643887, 0.131825904) },
+      u_scale: { value: 1.05 },
+      u_aspect: { value: 1 },
+      u_time: { value: 0 },
+      u_color: { value: new THREE.Vector3(accentColor.r, accentColor.g, accentColor.b) },
+      u_opacity: { value: 0.22 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv;
+
+      uniform vec2 u_center;
+      uniform float u_scale;
+      uniform float u_aspect;
+      uniform float u_time;
+      uniform vec3 u_color;
+      uniform float u_opacity;
+
+      vec2 cmul(vec2 a, vec2 b) {
+        return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
+      }
+
+      void main() {
+        // Map UV to complex plane (top-down view).
+        vec2 p = vUv * 2.0 - 1.0;
+        vec2 c = u_center + vec2(p.x * u_scale * u_aspect, p.y * u_scale);
+
+        // Escape-time Mandelbrot.
+        const int MAX_ITER = 220;
+        vec2 z = vec2(0.0);
+        float it = 0.0;
+        float m2 = 0.0;
+
+        for (int i = 0; i < MAX_ITER; i++) {
+          z = cmul(z, z) + c;
+          m2 = dot(z, z);
+          if (m2 > 4.0) {
+            it = float(i);
+            break;
+          }
+          it = float(i);
+        }
+
+        // Inside set: render very faintly.
+        float inside = step(m2, 4.0);
+
+        // Smooth iteration count for contour lines.
+        float smoothIt = it;
+        if (m2 > 4.0) {
+          float log_zn = log(m2) / 2.0;
+          float nu = log(log_zn / log(2.0)) / log(2.0);
+          smoothIt = it + 1.0 - nu;
+        }
+
+        // Wireframe-like contours (isolines) outside the set.
+        float v = smoothIt / float(MAX_ITER);
+        float bands = 26.0;
+        float f = abs(fract(v * bands) - 0.5);
+
+        // Animate slight breathing to avoid looking static between zoom rebuilds.
+        float wobble = 0.012 * sin(u_time * 0.6);
+        float thickness = 0.040 + wobble;
+        float line = 1.0 - smoothstep(thickness, thickness + 0.012, f);
+
+        float alphaOutside = line * u_opacity;
+        float alphaInside = u_opacity * 0.05;
+        float alpha = mix(alphaOutside, alphaInside, inside);
+
+        // Fade out the far exterior a touch so the UI stays readable.
+        alpha *= smoothstep(1.8, 0.2, length(p));
+
+        gl_FragColor = vec4(u_color, alpha);
+      }
+    `,
   });
 
-  // Grid resolution tuned to stay light for background usage.
-  const segX = 160;
-  const segY = 100;
-  const width = 9;
-  const height = 5.6;
-  const geometry = new THREE.PlaneGeometry(width, height, segX, segY);
-  const pos = geometry.attributes.position;
-
-  const maxIter = 60;
-
-  // Base region, then we zoom into a point within the set.
-  // Start region: x in [-2.4, 1.2], y in [-1.35, 1.35]
-  const baseXMin = -2.4;
-  const baseXMax = 1.2;
-  const baseYMin = -1.35;
-  const baseYMax = 1.35;
-
-  // A visually interesting zoom center.
-  const centerX = -0.743643887;
-  const centerY = 0.131825904;
-
-  function rebuildHeights(zoomScale) {
-    const halfW = ((baseXMax - baseXMin) / 2) * zoomScale;
-    const halfH = ((baseYMax - baseYMin) / 2) * zoomScale;
-    const xMin = centerX - halfW;
-    const xMax = centerX + halfW;
-    const yMin = centerY - halfH;
-    const yMax = centerY + halfH;
-
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-
-      const u = (x + width / 2) / width;
-      const v = (y + height / 2) / height;
-
-      const cx = xMin + u * (xMax - xMin);
-      const cy = yMin + v * (yMax - yMin);
-
-      const h = mandelbrotHeight(cx, cy, maxIter);
-      pos.setZ(i, h * 1.6);
-    }
-
-    pos.needsUpdate = true;
-  }
-
-  rebuildHeights(1);
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.rotation.x = -Math.PI / 2.75;
-  group.add(mesh);
-
-  // A second, slightly offset mesh adds density (still subtle).
-  const mesh2 = new THREE.Mesh(geometry, material.clone());
-  mesh2.material.opacity = 0.08;
-  mesh2.scale.set(1.01, 1.01, 1);
-  mesh2.position.y = -0.04;
-  mesh2.rotation.copy(mesh.rotation);
-  group.add(mesh2);
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  scene.add(quad);
 
   function resize() {
     const w = canvas.clientWidth || window.innerWidth;
@@ -157,8 +120,7 @@ if (!canvas) {
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    material.uniforms.u_aspect.value = w / h;
   }
 
   resize();
@@ -167,36 +129,20 @@ if (!canvas) {
   let rafId = 0;
   const clock = new THREE.Clock();
 
-  // Recompute the heightfield at a capped rate to keep things smooth.
-  let acc = 0;
-  const rebuildHz = 12;
-  const rebuildInterval = 1 / rebuildHz;
-
-  const zoomCycleSeconds = 18;
-  const zoomStart = 1;
-  const zoomEnd = 0.02;
+  // Classic-style infinite zoom: continuously reduce scale, then reset.
+  const zoomCycleSeconds = 22;
+  const scaleStart = 1.05;
+  const scaleEnd = 0.0009;
 
   function renderFrame() {
     const dt = clock.getDelta();
     const t = clock.getElapsedTime();
 
-    // Zoom cycle: exponentially zoom in, then reset.
     const p = (t % zoomCycleSeconds) / zoomCycleSeconds;
-    const zoomScale = Math.exp(Math.log(zoomEnd / zoomStart) * p) * zoomStart;
+    const scale = Math.exp(Math.log(scaleEnd / scaleStart) * p) * scaleStart;
 
-    // Only rebuild a few times per second.
-    acc += dt;
-    if (acc >= rebuildInterval) {
-      acc = 0;
-      rebuildHeights(zoomScale);
-    }
-
-    // Slow drift; stays readable behind text.
-    group.rotation.y = t * 0.05;
-    group.rotation.z = Math.sin(t * 0.2) * 0.03;
-    camera.position.x = Math.cos(t * 0.08) * 0.35;
-    camera.position.y = 2.2 + Math.sin(t * 0.09) * 0.15;
-    camera.lookAt(0, 0.4, 0);
+    material.uniforms.u_time.value = t;
+    material.uniforms.u_scale.value = scale;
     renderer.render(scene, camera);
     rafId = requestAnimationFrame(renderFrame);
   }
@@ -218,3 +164,5 @@ if (!canvas) {
     { passive: true }
   );
 }
+
+initMandelbrotBackground();

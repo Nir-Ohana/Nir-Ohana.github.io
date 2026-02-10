@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="JSON Beautifier — format JSON and copy the result" />
+    <meta name="description" content="HTML Renderer — preview HTML safely in a sandbox" />
 
-    <title>JSON Beautifier | Nir Ohana</title>
+    <title>HTML Renderer | Nir Ohana</title>
 
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -20,8 +20,8 @@
       <div class="container">
         <div class="header-inner">
           <div>
-            <h1>JSON Beautifier</h1>
-            <p class="subtitle">Paste JSON, format it, copy the result.</p>
+            <h1>HTML Renderer</h1>
+            <p class="subtitle">Preview HTML inside a sandboxed iframe.</p>
           </div>
 
           <button
@@ -60,47 +60,51 @@
 
       <nav class="nav-links" aria-label="Primary">
         <a href="./index.html">Home</a>
-        <a href="./json-beautifier.html" aria-current="page">JSON Beautifier</a>
-        <a href="./html-renderer.html">HTML Renderer</a>
+        <a href="./json-beautifier.html">JSON Beautifier</a>
+        <a href="./html-renderer.html" aria-current="page">HTML Renderer</a>
       </nav>
     </aside>
 
     <main id="content" class="container">
       <header class="page-header">
-        <h2>Formatter</h2>
-        <p class="muted">Input stays untouched on errors.</p>
+        <h2>Preview</h2>
+        <p class="muted">
+          Sandboxed preview: scripts, forms, and external resources are all blocked.
+          Only inline styles and data-URI images are allowed.
+        </p>
       </header>
 
-      <section class="panel" aria-label="JSON formatter">
+      <section class="panel" aria-label="HTML renderer">
         <div class="tool-grid">
           <div class="field">
-            <label for="jsonInput">Input JSON</label>
+            <label for="htmlInput">HTML</label>
             <textarea
-              id="jsonInput"
+              id="htmlInput"
               class="textarea"
               spellcheck="false"
               inputmode="text"
               aria-describedby="status"
-              placeholder='{"hello":"world"}'
+              placeholder="<!doctype html>\n<html>\n  <body>\n    <h1>Hello</h1>\n  </body>\n</html>"
             ></textarea>
           </div>
 
           <div class="field">
-            <label>Beautified output</label>
-            <div
-              id="jsonOutput"
-              class="textarea json-tree"
-              role="region"
-              aria-label="Beautified JSON output"
-              aria-describedby="status"
-              tabindex="0"
-            ></div>
+            <label for="htmlPreview">Rendered output</label>
+            <div class="preview" role="region" aria-label="Rendered output">
+              <iframe
+                id="htmlPreview"
+                class="preview-frame"
+                title="HTML preview"
+                sandbox
+                referrerpolicy="no-referrer"
+                csp="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:;"
+              ></iframe>
+            </div>
           </div>
         </div>
 
         <div class="actions" role="group" aria-label="Actions">
-          <button id="btnBeautify" class="btn btn-primary" type="button">Beautify</button>
-          <button id="btnCopy" class="btn" type="button" disabled>Copy output</button>
+          <button id="btnRender" class="btn btn-primary" type="button">Render</button>
           <button id="btnClear" class="btn" type="button">Clear</button>
         </div>
 
@@ -115,7 +119,7 @@
     </footer>
 
     <script type="module" src="./site.js"></script>
-    <script type="module" src="./json-beautifier.js"></script>
-    <script type="module" src="./mandelbrot-bg.js"></script>
+    <script type="module" src="./html-renderer.js"></script>
+    <script type="module" src="./three-bg.js"></script>
   </body>
 </html>

@@ -30,6 +30,9 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji";
   line-height: 1.65;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 body.nav-open {
@@ -107,6 +110,7 @@ button:focus-visible {
 main {
   position: relative;
   z-index: 1;
+  flex: 1 0 auto;
 }
 
 .header-inner {
@@ -310,6 +314,97 @@ h1 {
   border-color: rgb(239 68 68 / 0.55);
 }
 
+/* --- Collapsible JSON tree --- */
+
+.json-tree {
+  overflow: auto;
+  user-select: text;
+  cursor: default;
+}
+
+.json-tree details {
+  margin: 0;
+}
+
+.json-tree summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline;
+}
+
+.json-tree summary::before {
+  content: '▾ ';
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.json-tree details:not([open]) > summary::before {
+  content: '▸ ';
+}
+
+.json-tree summary::-webkit-details-marker {
+  display: none;
+}
+
+.jt-children {
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+  margin-left: 2px;
+}
+
+.jt-line {
+  white-space: nowrap;
+}
+
+.jt-key {
+  color: var(--accent);
+}
+
+.jt-str {
+  color: #16a34a;
+}
+
+.jt-num {
+  color: #d97706;
+}
+
+.jt-bool {
+  color: #9333ea;
+}
+
+.jt-null {
+  color: var(--muted);
+}
+
+.jt-bracket {
+  color: var(--fg);
+  font-weight: 650;
+}
+
+.jt-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.preview {
+  width: 100%;
+  min-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.75);
+  overflow: hidden;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  border: 0;
+  display: block;
+  background: var(--bg);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -427,6 +522,7 @@ h3 {
   padding: 18px 0;
   background: rgb(255 255 255 / 0.22);
   backdrop-filter: blur(8px);
+  margin-top: auto;
 }
 
 @media (max-width: 780px) {

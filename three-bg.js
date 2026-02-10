@@ -1,36 +1,13 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { getCanvas, getReducedMotion, supportsWebGL } from './bg-utils.js';
 
-function hexToThreeColorNumber(hex) {
-  if (!hex) return 0x1d4ed8;
-  const normalized = hex.trim().replace('#', '');
-  const isValid = /^[0-9a-fA-F]{6}$/.test(normalized);
-  return isValid ? Number.parseInt(normalized, 16) : 0x1d4ed8;
-}
-
-function getAccentColorNumber() {
-  const value = getComputedStyle(document.documentElement).getPropertyValue('--accent');
-  return hexToThreeColorNumber(value);
-}
-
-function supportsWebGL() {
-  try {
-    const canvas = document.createElement('canvas');
-    return Boolean(
-      window.WebGLRenderingContext &&
-        (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
-    );
-  } catch {
-    return false;
-  }
-}
-
-const canvas = document.getElementById('bg-canvas');
+const canvas = getCanvas('bg-canvas');
 if (!canvas) {
   // If the canvas is removed, just do nothing.
 } else if (!supportsWebGL()) {
   // Graceful no-op when WebGL isn't available.
 } else {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+  const reducedMotion = getReducedMotion();
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
