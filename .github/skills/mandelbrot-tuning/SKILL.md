@@ -14,3 +14,4 @@ Constraints:
 - No new UI elements.
 - No new colors/tokens.
 - Avoid heavy GPU work (no huge loops beyond what already exists).
+- Prefer using helpers from `bg-utils.js` (canvas lookup, reduced-motion, WebGL guard).

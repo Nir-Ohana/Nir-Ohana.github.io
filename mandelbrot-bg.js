@@ -10,7 +10,7 @@ function initMandelbrotBackground() {
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
+    antialias: false,
     alpha: true,
     powerPreference: 'high-performance',
   });
@@ -32,6 +32,7 @@ function initMandelbrotBackground() {
       u_scale: { value: 1.05 },
       u_aspect: { value: 1 },
       u_time: { value: 0 },
+      u_maxIter: { value: 140 },
       u_color: { value: new THREE.Vector3(accentColor.r, accentColor.g, accentColor.b) },
       u_opacity: { value: 0.22 },
     },
@@ -50,6 +51,7 @@ function initMandelbrotBackground() {
       uniform float u_scale;
       uniform float u_aspect;
       uniform float u_time;
+      uniform int u_maxIter;
       uniform vec3 u_color;
       uniform float u_opacity;
 
@@ -63,12 +65,17 @@ function initMandelbrotBackground() {
         vec2 c = u_center + vec2(p.x * u_scale * u_aspect, p.y * u_scale);
 
         // Escape-time Mandelbrot.
-        const int MAX_ITER = 220;
+        // Keep the loop bound constant for the shader compiler; limit work at runtime via u_maxIter.
+        const int MAX_ITER_CAP = 160;
         vec2 z = vec2(0.0);
         float it = 0.0;
         float m2 = 0.0;
 
-        for (int i = 0; i < MAX_ITER; i++) {
+        for (int i = 0; i < MAX_ITER_CAP; i++) {
+          if (i >= u_maxIter) {
+            it = float(u_maxIter);
+            break;
+          }
           z = cmul(z, z) + c;
           m2 = dot(z, z);
           if (m2 > 4.0) {
@@ -90,7 +97,8 @@ function initMandelbrotBackground() {
         }
 
         // Wireframe-like contours (isolines) outside the set.
-        float v = smoothIt / float(MAX_ITER);
+        float denom = max(1.0, float(u_maxIter));
+        float v = smoothIt / denom;
         float bands = 26.0;
         float f = abs(fract(v * bands) - 0.5);
 
@@ -114,13 +122,30 @@ function initMandelbrotBackground() {
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   scene.add(quad);
 
+  let qualityScale = 1;
+  let lastW = 0;
+  let lastH = 0;
+  let lastPixelRatio = 0;
+
   function resize() {
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-    renderer.setPixelRatio(pixelRatio);
-    renderer.setSize(w, h, false);
-    material.uniforms.u_aspect.value = w / h;
+    const dpr = window.devicePixelRatio || 1;
+    // Mandelbrot shaders are iteration-heavy; keep DPR conservative.
+    const basePixelRatio = Math.min(dpr, 1.25);
+    const pixelRatio = Math.max(0.6, Math.min(1.0, qualityScale)) * basePixelRatio;
+
+    if (w !== lastW || h !== lastH) {
+      renderer.setSize(w, h, false);
+      material.uniforms.u_aspect.value = w / h;
+      lastW = w;
+      lastH = h;
+    }
+
+    if (Math.abs(pixelRatio - lastPixelRatio) > 0.001) {
+      renderer.setPixelRatio(pixelRatio);
+      lastPixelRatio = pixelRatio;
+    }
   }
 
   resize();
@@ -128,6 +153,8 @@ function initMandelbrotBackground() {
 
   let rafId = 0;
   const clock = new THREE.Clock();
+  let avgFrameMs = 16;
+  let frameCount = 0;
 
   // Classic-style infinite zoom: continuously reduce scale, then reset.
   const zoomCycleSeconds = 22;
@@ -137,6 +164,25 @@ function initMandelbrotBackground() {
   function renderFrame() {
     const dt = clock.getDelta();
     const t = clock.getElapsedTime();
+
+    if (!reducedMotion) {
+      const frameMs = Math.min(100, dt * 1000);
+      avgFrameMs = avgFrameMs * 0.9 + frameMs * 0.1;
+      frameCount++;
+
+      // Light adaptive quality: lower DPR and iterations if the device struggles.
+      if (frameCount % 20 === 0) {
+        if (avgFrameMs > 22 && qualityScale > 0.7) {
+          qualityScale = Math.max(0.7, qualityScale - 0.1);
+          material.uniforms.u_maxIter.value = 110;
+          resize();
+        } else if (avgFrameMs < 17 && qualityScale < 1) {
+          qualityScale = Math.min(1, qualityScale + 0.05);
+          material.uniforms.u_maxIter.value = 140;
+          resize();
+        }
+      }
+    }
 
     const p = (t % zoomCycleSeconds) / zoomCycleSeconds;
     const scale = Math.exp(Math.log(scaleEnd / scaleStart) * p) * scaleStart;
