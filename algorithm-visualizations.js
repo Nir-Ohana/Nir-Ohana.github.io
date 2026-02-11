@@ -46,12 +46,17 @@ function buildLayout(list, spread) {
     );
   }
 
-  // Tail stretching to the left of the entry
+  // Tail stretching outward from the entry (away from cycle center).
+  // This reduces visual overlap between the tail and the cycle in perspective.
   const entryPos = positions[entry];
   const gap = spread;
+  const tailDir = entryPos.clone();
+  if (tailDir.lengthSq() < 1e-6) tailDir.set(-1, 0, 0);
+  else tailDir.normalize();
+
   for (let i = 0; i < entry; i++) {
     const dist = (entry - i) * gap;
-    positions[i] = new THREE.Vector3(entryPos.x - dist, entryPos.y, 0);
+    positions[i] = entryPos.clone().addScaledVector(tailDir, dist);
   }
 
   return positions;
@@ -292,7 +297,7 @@ function init() {
   const size = new THREE.Vector3();
   box.getSize(size);
   const maxSpan = Math.max(size.x, size.y) * 0.7;
-  three.camera.position.set(0, -maxSpan * 0.6, maxSpan * 1.1);
+  three.camera.position.set(maxSpan * 0.22, -maxSpan * 0.8, maxSpan * 1.25);
   three.camera.lookAt(0, 0, 0);
 
   const graph = buildGraph(three.scene, list, positions);
