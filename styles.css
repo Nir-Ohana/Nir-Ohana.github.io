@@ -284,10 +284,54 @@ h1 {
   gap: 14px;
 }
 
+.viz-grid {
+  align-items: start;
+}
+
 .field label {
   display: block;
   margin-bottom: 6px;
   font-weight: 650;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.75);
+  color: var(--fg);
+  font: inherit;
+}
+
+.small {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.viz-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.75);
+}
+
+.legend {
+  display: inline-block;
+  min-width: 1.2em;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+  background: var(--bg);
+  font-weight: 650;
+}
+
+.legend.hare,
+.legend.entry {
+  color: var(--accent);
 }
 
 .textarea {

@@ -31,7 +31,12 @@ async function main() {
     process.exit(1);
   }
 
-  const requiredMenuLinks = ['./index.html', './json-beautifier.html', './html-renderer.html'];
+  const requiredMenuLinks = [
+    './index.html',
+    './algorithm-visualizations.html',
+    './json-beautifier.html',
+    './html-renderer.html',
+  ];
 
   for (const file of htmlFiles) {
     const html = await fs.readFile(file, 'utf8');
