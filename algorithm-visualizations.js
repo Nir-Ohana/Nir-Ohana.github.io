@@ -27,36 +27,30 @@ function createList(tailLen, cycleLen) {
   return { total, entry, next };
 }
 
-/** Returns 3-D positions (x, y on a plane, z = 0). */
+/** Returns 3-D positions: tail runs left-to-right, cycle sits on the right. */
 function buildLayout(list, spread) {
   const { total, entry } = list;
   const cycleLen = total - entry;
   const positions = new Array(total);
 
-  // Cycle ring
+  // Cycle ring centred to the right of the tail
   const ringR = cycleLen * spread / (2 * Math.PI);
-  const cx = 0;
-  const cy = 0;
+  const cycleX = entry * spread + ringR;   // push ring right of tail
+  const cycleY = 0;
   for (let k = 0; k < cycleLen; k++) {
-    const angle = -Math.PI / 2 + (k / cycleLen) * Math.PI * 2;
+    const angle = Math.PI + (k / cycleLen) * Math.PI * 2;  // entry faces left toward tail
     positions[entry + k] = new THREE.Vector3(
-      cx + ringR * Math.cos(angle),
-      cy + ringR * Math.sin(angle),
+      cycleX + ringR * Math.cos(angle),
+      cycleY + ringR * Math.sin(angle),
       0,
     );
   }
 
-  // Tail stretching outward from the entry (away from cycle center).
-  // This reduces visual overlap between the tail and the cycle in perspective.
+  // Tail: nodes 0..entry-1 in a straight line from left to the entry
   const entryPos = positions[entry];
-  const gap = spread;
-  const tailDir = entryPos.clone();
-  if (tailDir.lengthSq() < 1e-6) tailDir.set(-1, 0, 0);
-  else tailDir.normalize();
-
   for (let i = 0; i < entry; i++) {
-    const dist = (entry - i) * gap;
-    positions[i] = entryPos.clone().addScaledVector(tailDir, dist);
+    const x = i * spread;
+    positions[i] = new THREE.Vector3(x, entryPos.y, 0);
   }
 
   return positions;
@@ -228,42 +222,21 @@ function positionPointers(graph, positions, tIdx, hIdx) {
 /* ── Floyd's cycle detection state machine ──────────────────── */
 
 function createFloydState() {
-  return { tortoise: 0, hare: 0, phase: 'phase1', done: false, foundEntry: null };
+  return { tortoise: 0, hare: 0, done: false };
 }
 
-/** Advance one tick. Returns a status message. */
+/** Advance one tick. Tortoise +1, hare +2. Returns a status message. */
 function floydStep(s, list) {
   const { next } = list;
 
-  if (s.phase === 'phase1') {
-    // Tortoise moves 1, hare moves 2
-    s.tortoise = next[s.tortoise];
-    s.hare = next[next[s.hare]];
+  s.tortoise = next[s.tortoise];
+  s.hare = next[next[s.hare]];
 
-    if (s.tortoise === s.hare) {
-      s.phase = 'phase2';
-      // Standard Floyd: reset tortoise to head, keep hare at meeting point
-      s.tortoise = 0;
-      return `Met at node ${s.hare}. Starting phase 2…`;
-    }
-    return `Phase 1 — T:${s.tortoise}  H:${s.hare}`;
+  if (s.tortoise === s.hare) {
+    s.done = true;
+    return `Cycle detected! Both met at node ${s.tortoise}.`;
   }
-
-  if (s.phase === 'phase2') {
-    // Both move 1 step
-    s.tortoise = next[s.tortoise];
-    s.hare = next[s.hare];
-
-    if (s.tortoise === s.hare) {
-      s.phase = 'done';
-      s.done = true;
-      s.foundEntry = s.tortoise;
-      return `Cycle entry found at node ${s.foundEntry}!`;
-    }
-    return `Phase 2 — T:${s.tortoise}  H:${s.hare}`;
-  }
-
-  return `Cycle entry: node ${s.foundEntry}`;
+  return `T:${s.tortoise}  H:${s.hare}`;
 }
 
 /* ── Main ───────────────────────────────────────────────────── */
@@ -297,7 +270,7 @@ function init() {
   const size = new THREE.Vector3();
   box.getSize(size);
   const maxSpan = Math.max(size.x, size.y) * 0.7;
-  three.camera.position.set(maxSpan * 0.22, -maxSpan * 0.8, maxSpan * 1.25);
+  three.camera.position.set(0, -maxSpan * 0.55, maxSpan * 1.0);
   three.camera.lookAt(0, 0, 0);
 
   const graph = buildGraph(three.scene, list, positions);
@@ -306,7 +279,7 @@ function init() {
   positionPointers(graph, positions, floyd.tortoise, floyd.hare);
   colorActiveNodes(graph, list, floyd.tortoise, floyd.hare);
   three.renderer.render(three.scene, three.camera);
-  statusEl.textContent = 'Phase 1 — T:0  H:0';
+  statusEl.textContent = 'T:0  H:0';
 
   // Handle resize
   const ro = new ResizeObserver(() => {
@@ -344,7 +317,7 @@ function init() {
       floyd = createFloydState();
       positionPointers(graph, positions, floyd.tortoise, floyd.hare);
       colorActiveNodes(graph, list, floyd.tortoise, floyd.hare);
-      statusEl.textContent = 'Restarting… Phase 1 — T:0  H:0';
+      statusEl.textContent = 'Restarting… T:0  H:0';
       pauseUntil = ts + PAUSE_AFTER_DONE;
       three.renderer.render(three.scene, three.camera);
       return;
