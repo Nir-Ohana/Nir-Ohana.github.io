@@ -1,4 +1,8 @@
-const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+import { getAccentColorNumber, getReducedMotion, supportsWebGL } from './bg-utils.js';
+
+const prefersReducedMotion = getReducedMotion();
 
 function clampNumber(value, min, max, fallback) {
   const num = Number(value);
@@ -59,145 +63,237 @@ function buildLayout({ total, entry, next }, width, height) {
   return { positions, next };
 }
 
-function drawArrow(ctx, from, to) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 0.001) return;
-
-  const ux = dx / len;
-  const uy = dy / len;
-
-  const paddingFrom = 16;
-  const paddingTo = 18;
-  const start = { x: from.x + ux * paddingFrom, y: from.y + uy * paddingFrom };
-  const end = { x: to.x - ux * paddingTo, y: to.y - uy * paddingTo };
-
-  ctx.beginPath();
-  ctx.moveTo(start.x, start.y);
-  ctx.lineTo(end.x, end.y);
-  ctx.stroke();
-
-  const headLen = 8;
-  const angle = Math.atan2(end.y - start.y, end.x - start.x);
-  ctx.beginPath();
-  ctx.moveTo(end.x, end.y);
-  ctx.lineTo(end.x - headLen * Math.cos(angle - Math.PI / 7), end.y - headLen * Math.sin(angle - Math.PI / 7));
-  ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 7), end.y - headLen * Math.sin(angle + Math.PI / 7));
-  ctx.closePath();
-  ctx.fill();
+function cssVar(name, fallback) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+  const trimmed = String(value || '').trim();
+  return trimmed || fallback;
 }
 
-function drawScene(ctx, state) {
-  const {
-    width,
-    height,
-    list,
-    layout,
-    tortoise,
-    hare,
-    phase,
-    entry,
-    foundEntry,
-  } = state;
+function parseHexColorToNumber(hex, fallback) {
+  if (!hex) return fallback;
+  const normalized = String(hex).trim().replace('#', '');
+  const isValid = /^[0-9a-fA-F]{6}$/.test(normalized);
+  return isValid ? Number.parseInt(normalized, 16) : fallback;
+}
 
-  ctx.clearRect(0, 0, width, height);
+function makeTextSprite(text, colorHex, fontSize = 32) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const padding = Math.ceil(fontSize * 0.6);
+  const size = fontSize + padding;
 
-  // Background (transparent to let page styling show through)
+  canvas.width = size;
+  canvas.height = size;
 
-  // Edges
-  ctx.save();
-  ctx.strokeStyle = 'rgba(17 24 39 / 0.28)';
-  ctx.fillStyle = 'rgba(17 24 39 / 0.28)';
-  ctx.lineWidth = 2;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = 'rgba(0 0 0 / 0)';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = colorHex;
+  ctx.font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(text), size / 2, size / 2);
 
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(20, 20, 1);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+function initThree(canvas) {
+  if (!supportsWebGL()) return null;
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: true,
+    powerPreference: 'low-power',
+  });
+
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+  camera.position.set(0, 0, 200);
+  camera.lookAt(0, 0, 0);
+
+  // Shared materials
+  const accentNum = getAccentColorNumber(0x1d4ed8);
+  const borderNum = parseHexColorToNumber(cssVar('--border', '#e5e7eb'), 0xe5e7eb);
+  const fgNum = parseHexColorToNumber(cssVar('--fg', '#111827'), 0x111827);
+  const mutedNum = parseHexColorToNumber(cssVar('--muted', '#4b5563'), 0x4b5563);
+
+  const lineMaterial = new THREE.LineBasicMaterial({ color: fgNum, transparent: true, opacity: 0.28 });
+  const nodeMaterial = new THREE.MeshBasicMaterial({ color: borderNum, wireframe: true, transparent: true, opacity: 0.9 });
+  const nodeHighlightT = new THREE.MeshBasicMaterial({ color: fgNum, wireframe: true, transparent: true, opacity: 0.95 });
+  const nodeHighlightH = new THREE.MeshBasicMaterial({ color: accentNum, wireframe: true, transparent: true, opacity: 0.95 });
+
+  const labelColor = cssVar('--muted', '#4b5563');
+  const pointerColorH = cssVar('--accent', '#1d4ed8');
+  const pointerColorT = cssVar('--fg', '#111827');
+
+  return {
+    renderer,
+    scene,
+    camera,
+    materials: { lineMaterial, nodeMaterial, nodeHighlightT, nodeHighlightH },
+    colors: { labelColor, pointerColorH, pointerColorT, mutedNum, fgNum, accentNum },
+    objects: {
+      edgeLines: null,
+      nodes: [],
+      nodeLabels: [],
+      entrySprite: null,
+      tortoiseSprite: null,
+      hareSprite: null,
+    },
+  };
+}
+
+function updateRendererSize(three, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+
+  three.renderer.setSize(width, height, false);
+
+  three.camera.left = -width / 2;
+  three.camera.right = width / 2;
+  three.camera.top = height / 2;
+  three.camera.bottom = -height / 2;
+  three.camera.updateProjectionMatrix();
+
+  return { width, height };
+}
+
+function toSceneXY(x, y, width, height) {
+  return { x: x - width / 2, y: -(y - height / 2) };
+}
+
+function clearSceneObjects(three) {
+  const { scene, objects } = three;
+
+  if (objects.edgeLines) {
+    scene.remove(objects.edgeLines);
+    objects.edgeLines.geometry.dispose();
+    objects.edgeLines = null;
+  }
+
+  for (const mesh of objects.nodes) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+  }
+  objects.nodes = [];
+
+  for (const sprite of objects.nodeLabels) {
+    scene.remove(sprite);
+    sprite.material.map.dispose();
+    sprite.material.dispose();
+  }
+  objects.nodeLabels = [];
+
+  for (const key of ['entrySprite', 'tortoiseSprite', 'hareSprite']) {
+    const sprite = objects[key];
+    if (!sprite) continue;
+    scene.remove(sprite);
+    sprite.material.map.dispose();
+    sprite.material.dispose();
+    objects[key] = null;
+  }
+}
+
+function buildThreeGraph(three, list, layout, width, height) {
+  clearSceneObjects(three);
+
+  const { scene, materials, colors, objects } = three;
+  const nodeGeom = new THREE.IcosahedronGeometry(10, 1);
+
+  // Nodes + labels
+  for (let i = 0; i < list.total; i++) {
+    const pos = layout.positions[i];
+    const p = toSceneXY(pos.x, pos.y, width, height);
+
+    const node = new THREE.Mesh(nodeGeom, materials.nodeMaterial);
+    node.position.set(p.x, p.y, 0);
+    node.userData.index = i;
+    objects.nodes.push(node);
+    scene.add(node);
+
+    const label = makeTextSprite(String(i), colors.labelColor, 30);
+    label.position.set(p.x, p.y, 1);
+    label.scale.set(18, 18, 1);
+    objects.nodeLabels.push(label);
+    scene.add(label);
+  }
+
+  // Edges as line segments (no arrowheads)
+  const positions = new Float32Array(list.total * 2 * 3);
   for (let i = 0; i < list.total; i++) {
     const from = layout.positions[i];
     const to = layout.positions[list.next[i]];
-    drawArrow(ctx, from, to);
+    const a = toSceneXY(from.x, from.y, width, height);
+    const b = toSceneXY(to.x, to.y, width, height);
+
+    const base = i * 6;
+    positions[base + 0] = a.x;
+    positions[base + 1] = a.y;
+    positions[base + 2] = -2;
+    positions[base + 3] = b.x;
+    positions[base + 4] = b.y;
+    positions[base + 5] = -2;
   }
-  ctx.restore();
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const edgeLines = new THREE.LineSegments(geom, materials.lineMaterial);
+  objects.edgeLines = edgeLines;
+  scene.add(edgeLines);
 
-  // Nodes
-  const nodeR = 16;
-  ctx.save();
-  ctx.lineWidth = 2;
-  for (let i = 0; i < list.total; i++) {
-    const p = layout.positions[i];
+  // Entry + pointers
+  objects.entrySprite = makeTextSprite('E', colors.pointerColorH, 34);
+  objects.entrySprite.scale.set(22, 22, 1);
+  objects.entrySprite.renderOrder = 11;
+  scene.add(objects.entrySprite);
 
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, nodeR, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255 255 255 / 0.92)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(229 231 235 / 1)';
-    ctx.stroke();
+  objects.tortoiseSprite = makeTextSprite('T', colors.pointerColorT, 34);
+  objects.tortoiseSprite.scale.set(22, 22, 1);
+  objects.tortoiseSprite.renderOrder = 11;
+  scene.add(objects.tortoiseSprite);
 
-    ctx.fillStyle = 'rgba(75 85 99 / 1)';
-    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(i), p.x, p.y);
-  }
-  ctx.restore();
+  objects.hareSprite = makeTextSprite('H', colors.pointerColorH, 34);
+  objects.hareSprite.scale.set(22, 22, 1);
+  objects.hareSprite.renderOrder = 11;
+  scene.add(objects.hareSprite);
 
-  // Entry marker
-  ctx.save();
-  {
-    const p = layout.positions[entry];
-    ctx.fillStyle = 'rgba(29 78 216 / 0.9)';
-    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('E', p.x, p.y - nodeR - 6);
-  }
-  ctx.restore();
-
-  // Pointer labels
-  function drawPointerLabel(nodeIndex, label, color, yOffset = 0) {
-    const p = layout.positions[nodeIndex];
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(label, p.x, p.y + nodeR + 6 + yOffset);
-    ctx.restore();
-  }
-
-  const tortoiseColor = 'rgba(17 24 39 / 0.9)';
-  const hareColor = 'rgba(29 78 216 / 0.9)';
-
-  if (tortoise === hare) {
-    drawPointerLabel(tortoise, 'T/H', hareColor);
-  } else {
-    drawPointerLabel(tortoise, 'T', tortoiseColor);
-    drawPointerLabel(hare, 'H', hareColor, 0);
-  }
-
-  if (phase === 'done' && Number.isInteger(foundEntry)) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(17 24 39 / 0.85)';
-    ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`Entry found: ${foundEntry}`, 12, 12);
-    ctx.restore();
-  }
+  nodeGeom.dispose();
 }
 
-function makeHiDPICanvas(canvas) {
-  const ctx = canvas.getContext('2d');
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cssWidth = canvas.width;
-  const cssHeight = canvas.height;
+function updateThreePointers(three, state, width, height) {
+  const { list, layout, tortoise, hare, entry } = state;
+  const { objects, materials } = three;
 
-  canvas.style.width = `${cssWidth}px`;
-  canvas.style.height = `${cssHeight}px`;
-  canvas.width = Math.round(cssWidth * dpr);
-  canvas.height = Math.round(cssHeight * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!list || !layout) return;
 
-  return { ctx, width: cssWidth, height: cssHeight };
+  // Reset all node materials
+  for (const mesh of objects.nodes) mesh.material = materials.nodeMaterial;
+
+  // Highlight nodes under pointers
+  if (objects.nodes[tortoise]) objects.nodes[tortoise].material = materials.nodeHighlightT;
+  if (objects.nodes[hare]) objects.nodes[hare].material = materials.nodeHighlightH;
+
+  const entryPos = toSceneXY(layout.positions[entry].x, layout.positions[entry].y, width, height);
+  objects.entrySprite.position.set(entryPos.x, entryPos.y + 24, 2);
+
+  const tPos = toSceneXY(layout.positions[tortoise].x, layout.positions[tortoise].y, width, height);
+  objects.tortoiseSprite.position.set(tPos.x, tPos.y - 28, 2);
+
+  const hPos = toSceneXY(layout.positions[hare].x, layout.positions[hare].y, width, height);
+  objects.hareSprite.position.set(hPos.x, hPos.y - 52, 2);
 }
 
 function init() {
@@ -215,7 +311,33 @@ function init() {
   if (!tailEl || !cycleEl || !speedEl || !canvas || !statusEl) return;
   if (!btnBuild || !btnStep || !btnPlay || !btnReset) return;
 
-  const { ctx, width, height } = makeHiDPICanvas(canvas);
+  if (!supportsWebGL()) {
+    statusEl.textContent = 'WebGL is not available in this browser.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  const three = initThree(canvas);
+  if (!three) {
+    statusEl.textContent = 'Could not initialize Three.js.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  let { width, height } = updateRendererSize(three, canvas);
+
+  const ro = new ResizeObserver(() => {
+    ({ width, height } = updateRendererSize(three, canvas));
+    if (state.list && state.layout) {
+      state = { ...state, width, height, layout: buildLayout(state.list, width, height) };
+      buildThreeGraph(three, state.list, state.layout, width, height);
+      updateThreePointers(three, state, width, height);
+      three.renderer.render(three.scene, three.camera);
+    } else {
+      three.renderer.render(three.scene, three.camera);
+    }
+  });
+  ro.observe(canvas);
 
   let state = {
     width,
@@ -265,7 +387,9 @@ function init() {
     btnPlay.textContent = 'Play';
 
     setStatus('Built a linked list with a tail + cycle. Use Step or Play.');
-    drawScene(ctx, state);
+    buildThreeGraph(three, list, layout, width, height);
+    updateThreePointers(three, state, width, height);
+    three.renderer.render(three.scene, three.camera);
   }
 
   function resetPointersOnly() {
@@ -280,7 +404,8 @@ function init() {
       steps: 0,
     };
     setStatus('Reset pointers.');
-    drawScene(ctx, state);
+    updateThreePointers(three, state, width, height);
+    three.renderer.render(three.scene, three.camera);
   }
 
   function stepOnce() {
@@ -304,13 +429,16 @@ function init() {
       state = { ...state, tortoise: newT, hare: newH, steps };
 
       if (newT === newH) {
-        state = { ...state, phase: 'phase2', meet: newT, hare: newT, tortoise: 0 };
-        setStatus(`Phase 1: met at node ${newT}. Phase 2: move both 1× to find entry.`);
+        // Phase 2: keep tortoise at the meeting point; reset hare to head.
+        // (Resetting either pointer is correct; this avoids the tortoise "jumping" back.)
+        state = { ...state, phase: 'phase2', meet: newT, tortoise: newT, hare: 0 };
+        setStatus(`Phase 1: met at node ${newT}. Phase 2: reset hare to head; move both 1× to find entry.`);
       } else {
         setStatus(`Phase 1: step ${steps}.`);
       }
 
-      drawScene(ctx, state);
+      updateThreePointers(three, state, width, height);
+      three.renderer.render(three.scene, three.camera);
       return;
     }
 
@@ -328,7 +456,8 @@ function init() {
         setStatus(`Phase 2: step ${steps}.`);
       }
 
-      drawScene(ctx, state);
+      updateThreePointers(three, state, width, height);
+      three.renderer.render(three.scene, three.camera);
     }
   }
 
