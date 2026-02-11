@@ -114,6 +114,9 @@ function buildGraph(scene, list, positions) {
   const nodeGeom = new THREE.IcosahedronGeometry(NODE_RADIUS, 1);
   const nodeMat = new THREE.MeshBasicMaterial({ color: COLOR_NODE, wireframe: true });
   const entryMat = new THREE.MeshBasicMaterial({ color: COLOR_ENTRY, wireframe: true });
+  const tortoiseNodeMat = new THREE.MeshBasicMaterial({ color: COLOR_TORTOISE, wireframe: true });
+  const hareNodeMat = new THREE.MeshBasicMaterial({ color: COLOR_HARE, wireframe: true });
+  const overlapNodeMat = new THREE.MeshBasicMaterial({ color: COLOR_ENTRY, wireframe: true });
 
   const nodes = [];
   const labels = [];
@@ -174,7 +177,35 @@ function buildGraph(scene, list, positions) {
 
   scene.add(group);
 
-  return { group, nodes, labels, tortoiseMesh, hareMesh, tLabel, hLabel };
+  return {
+    group,
+    nodes,
+    labels,
+    tortoiseMesh,
+    hareMesh,
+    tLabel,
+    hLabel,
+    materials: { nodeMat, entryMat, tortoiseNodeMat, hareNodeMat, overlapNodeMat },
+  };
+}
+
+function colorActiveNodes(graph, list, tIdx, hIdx) {
+  const { nodes, materials } = graph;
+  for (let i = 0; i < nodes.length; i++) {
+    nodes[i].material = i === list.entry ? materials.entryMat : materials.nodeMat;
+  }
+
+  if (tIdx === hIdx) {
+    nodes[tIdx].material = materials.overlapNodeMat;
+    return;
+  }
+
+  nodes[tIdx].material = materials.tortoiseNodeMat;
+  nodes[hIdx].material = materials.hareNodeMat;
+
+  // Preserve entry coloring if a pointer is on the entry.
+  if (tIdx === list.entry) nodes[tIdx].material = materials.tortoiseNodeMat;
+  if (hIdx === list.entry) nodes[hIdx].material = materials.hareNodeMat;
 }
 
 function positionPointers(graph, positions, tIdx, hIdx) {
@@ -268,6 +299,7 @@ function init() {
 
   let floyd = createFloydState();
   positionPointers(graph, positions, floyd.tortoise, floyd.hare);
+  colorActiveNodes(graph, list, floyd.tortoise, floyd.hare);
   three.renderer.render(three.scene, three.camera);
   statusEl.textContent = 'Phase 1 — T:0  H:0';
 
@@ -306,6 +338,7 @@ function init() {
       // Restart after a pause
       floyd = createFloydState();
       positionPointers(graph, positions, floyd.tortoise, floyd.hare);
+      colorActiveNodes(graph, list, floyd.tortoise, floyd.hare);
       statusEl.textContent = 'Restarting… Phase 1 — T:0  H:0';
       pauseUntil = ts + PAUSE_AFTER_DONE;
       three.renderer.render(three.scene, three.camera);
@@ -315,6 +348,7 @@ function init() {
     const msg = floydStep(floyd, list);
     statusEl.textContent = msg;
     positionPointers(graph, positions, floyd.tortoise, floyd.hare);
+    colorActiveNodes(graph, list, floyd.tortoise, floyd.hare);
     three.renderer.render(three.scene, three.camera);
 
     if (floyd.done) {
