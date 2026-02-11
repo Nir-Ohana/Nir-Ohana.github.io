@@ -69,53 +69,21 @@
       <header class="page-header">
         <h2>Floyd’s cycle detection (Tortoise &amp; Hare)</h2>
         <p class="muted">
-          Detects a cycle in a linked list using two pointers. Phase 1 finds a meeting point. Phase
-          2 finds the cycle entry.
+          Two pointers traverse a linked list: the
+          <strong style="color:#16a34a">tortoise</strong> moves one step, the
+          <strong style="color:#dc2626">hare</strong> moves two. When they meet, phase 2 finds
+          the cycle entry.
         </p>
       </header>
 
       <section class="panel" aria-label="Cycle detection visualization">
-        <div class="tool-grid viz-grid">
-          <div class="field">
-            <label for="tailLen">Tail length</label>
-            <input id="tailLen" class="input" type="number" min="0" max="30" value="6" />
-            <p class="muted small">Nodes before the cycle starts.</p>
-
-            <label for="cycleLen" style="margin-top: 12px">Cycle length</label>
-            <input id="cycleLen" class="input" type="number" min="1" max="30" value="9" />
-            <p class="muted small">Nodes inside the cycle.</p>
-
-            <label for="speed" style="margin-top: 12px">Speed (steps/sec)</label>
-            <input id="speed" class="input" type="number" min="1" max="10" value="2" />
-            <p class="muted small">Disabled if you prefer reduced motion.</p>
-
-            <div class="actions" role="group" aria-label="Controls" style="margin-top: 14px">
-              <button id="btnBuild" class="btn" type="button">Build list</button>
-              <button id="btnStep" class="btn btn-primary" type="button">Step</button>
-              <button id="btnPlay" class="btn" type="button">Play</button>
-              <button id="btnReset" class="btn" type="button">Reset</button>
-            </div>
-
-            <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
-          </div>
-
-          <div class="field">
-            <label for="vizCanvas">Visualization</label>
-            <canvas
-              id="vizCanvas"
-              class="viz-canvas"
-              width="720"
-              height="420"
-              role="img"
-              aria-label="Linked list visualization with tortoise and hare pointers"
-            ></canvas>
-            <p class="muted small">
-              Legend: <span class="legend tortoise">T</span> tortoise (1×),
-              <span class="legend hare">H</span> hare (2×), <span class="legend entry">E</span>
-              cycle entry.
-            </p>
-          </div>
-        </div>
+        <canvas
+          id="vizCanvas"
+          class="viz-canvas viz-canvas-full"
+          role="img"
+          aria-label="Linked list visualization with tortoise and hare pointers"
+        ></canvas>
+        <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
     </main>
 

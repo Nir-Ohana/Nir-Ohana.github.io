@@ -1,535 +1,328 @@
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+import { getReducedMotion, supportsWebGL } from './bg-utils.js';
 
-import { getAccentColorNumber, getReducedMotion, supportsWebGL } from './bg-utils.js';
+/* ── Config ─────────────────────────────────────────────────── */
+const TAIL_LEN = 5;
+const CYCLE_LEN = 8;
+const STEP_INTERVAL = 800;          // ms between algorithm steps
+const PAUSE_AFTER_DONE = 2400;      // ms before restarting
+const NODE_RADIUS = 8;
+const POINTER_RADIUS = 3.2;
 
-const prefersReducedMotion = getReducedMotion();
+const COLOR_NODE      = 0xd1d5db;   // grey wireframe
+const COLOR_EDGE      = 0x6b7280;
+const COLOR_TORTOISE  = 0x16a34a;   // green
+const COLOR_HARE      = 0xdc2626;   // red
+const COLOR_ENTRY     = 0x1d4ed8;   // accent blue
+const COLOR_LABEL     = '#4b5563';
 
-function clampNumber(value, min, max, fallback) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return fallback;
-  return Math.min(max, Math.max(min, num));
-}
+/* ── Linked-list helpers ────────────────────────────────────── */
 
 function createList(tailLen, cycleLen) {
   const total = tailLen + cycleLen;
   const entry = tailLen;
   const next = new Array(total);
-
   for (let i = 0; i < total - 1; i++) next[i] = i + 1;
   next[total - 1] = entry;
-
   return { total, entry, next };
 }
 
-function buildLayout({ total, entry, next }, width, height) {
-  const positions = new Array(total);
-  const cx = Math.round(width * 0.62);
-  const cy = Math.round(height * 0.52);
+/** Returns 3-D positions (x, y on a plane, z = 0). */
+function buildLayout(list, spread) {
+  const { total, entry } = list;
   const cycleLen = total - entry;
+  const positions = new Array(total);
 
-  const radius = Math.max(90, Math.min(150, Math.floor(Math.min(width, height) * 0.26)));
-
-  // Cycle nodes around a circle.
+  // Cycle ring
+  const ringR = cycleLen * spread / (2 * Math.PI);
+  const cx = 0;
+  const cy = 0;
   for (let k = 0; k < cycleLen; k++) {
-    const idx = entry + k;
     const angle = -Math.PI / 2 + (k / cycleLen) * Math.PI * 2;
-    positions[idx] = {
-      x: Math.round(cx + radius * Math.cos(angle)),
-      y: Math.round(cy + radius * Math.sin(angle)),
-    };
+    positions[entry + k] = new THREE.Vector3(
+      cx + ringR * Math.cos(angle),
+      cy + ringR * Math.sin(angle),
+      0,
+    );
   }
 
-  // Tail nodes on a line to the left, ending at the entry.
+  // Tail stretching to the left of the entry
   const entryPos = positions[entry];
-  const startX = 70;
-  const endX = Math.max(startX + 40, entryPos.x - radius - 40);
-  const tailY = cy;
-
+  const gap = spread;
   for (let i = 0; i < entry; i++) {
-    const t = entry <= 1 ? 0 : i / (entry - 1);
-    positions[i] = {
-      x: Math.round(startX + t * (endX - startX)),
-      y: tailY,
-    };
+    const dist = (entry - i) * gap;
+    positions[i] = new THREE.Vector3(entryPos.x - dist, entryPos.y, 0);
   }
 
-  // Make sure arrows are drawable even for very small tail.
-  if (entry === 0) {
-    // no tail; ensure head is entry
-  } else {
-    positions[entry - 1].x = Math.min(positions[entry - 1].x, positions[entry].x - 46);
-  }
-
-  return { positions, next };
+  return positions;
 }
 
-function cssVar(name, fallback) {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
-  const trimmed = String(value || '').trim();
-  return trimmed || fallback;
-}
+/* ── Text sprite factory ────────────────────────────────────── */
 
-function parseHexColorToNumber(hex, fallback) {
-  if (!hex) return fallback;
-  const normalized = String(hex).trim().replace('#', '');
-  const isValid = /^[0-9a-fA-F]{6}$/.test(normalized);
-  return isValid ? Number.parseInt(normalized, 16) : fallback;
-}
-
-function makeTextSprite(text, colorHex, fontSize = 32) {
+function makeTextSprite(text, color, fontSize = 48) {
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const padding = Math.ceil(fontSize * 0.6);
-  const size = fontSize + padding;
-
+  const size = fontSize * 1.4;
   canvas.width = size;
   canvas.height = size;
-
-  ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = 'rgba(0 0 0 / 0)';
-  ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = colorHex;
-  ctx.font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.font = `700 ${fontSize}px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(text), size / 2, size / 2);
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(20, 20, 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
   sprite.renderOrder = 10;
   return sprite;
 }
 
-function initThree(canvas) {
-  if (!supportsWebGL()) return null;
+/* ── Three.js scene setup ───────────────────────────────────── */
 
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true,
-    alpha: true,
-    powerPreference: 'low-power',
-  });
-
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+function initScene(canvas) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
 
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
-  camera.position.set(0, 0, 200);
+  // Perspective camera, tilted so you can see the 3-D wireframes
+  const camera = new THREE.PerspectiveCamera(45, 1, 1, 2000);
+  camera.position.set(0, -120, 200);
+  camera.up.set(0, 0, 1);
   camera.lookAt(0, 0, 0);
 
-  // Shared materials
-  const accentNum = getAccentColorNumber(0x1d4ed8);
-  const borderNum = parseHexColorToNumber(cssVar('--border', '#e5e7eb'), 0xe5e7eb);
-  const fgNum = parseHexColorToNumber(cssVar('--fg', '#111827'), 0x111827);
-  const mutedNum = parseHexColorToNumber(cssVar('--muted', '#4b5563'), 0x4b5563);
-
-  const lineMaterial = new THREE.LineBasicMaterial({ color: fgNum, transparent: true, opacity: 0.28 });
-  const nodeMaterial = new THREE.MeshBasicMaterial({ color: borderNum, wireframe: true, transparent: true, opacity: 0.9 });
-  const nodeHighlightT = new THREE.MeshBasicMaterial({ color: fgNum, wireframe: true, transparent: true, opacity: 0.95 });
-  const nodeHighlightH = new THREE.MeshBasicMaterial({ color: accentNum, wireframe: true, transparent: true, opacity: 0.95 });
-
-  const labelColor = cssVar('--muted', '#4b5563');
-  const pointerColorH = cssVar('--accent', '#1d4ed8');
-  const pointerColorT = cssVar('--fg', '#111827');
-
-  return {
-    renderer,
-    scene,
-    camera,
-    materials: { lineMaterial, nodeMaterial, nodeHighlightT, nodeHighlightH },
-    colors: { labelColor, pointerColorH, pointerColorT, mutedNum, fgNum, accentNum },
-    objects: {
-      edgeLines: null,
-      nodes: [],
-      nodeLabels: [],
-      entrySprite: null,
-      tortoiseSprite: null,
-      hareSprite: null,
-    },
-  };
+  return { renderer, scene, camera };
 }
 
-function updateRendererSize(three, canvas) {
+function resize({ renderer, camera }, canvas) {
   const rect = canvas.getBoundingClientRect();
-  const width = Math.max(1, Math.round(rect.width));
-  const height = Math.max(1, Math.round(rect.height));
-
-  three.renderer.setSize(width, height, false);
-
-  three.camera.left = -width / 2;
-  three.camera.right = width / 2;
-  three.camera.top = height / 2;
-  three.camera.bottom = -height / 2;
-  three.camera.updateProjectionMatrix();
-
-  return { width, height };
+  const w = Math.max(1, Math.round(rect.width));
+  const h = Math.max(1, Math.round(rect.height));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
 
-function toSceneXY(x, y, width, height) {
-  return { x: x - width / 2, y: -(y - height / 2) };
-}
+/* ── Build the visual graph ─────────────────────────────────── */
 
-function clearSceneObjects(three) {
-  const { scene, objects } = three;
+function buildGraph(scene, list, positions) {
+  const group = new THREE.Group();
 
-  if (objects.edgeLines) {
-    scene.remove(objects.edgeLines);
-    objects.edgeLines.geometry.dispose();
-    objects.edgeLines = null;
-  }
+  const nodeGeom = new THREE.IcosahedronGeometry(NODE_RADIUS, 1);
+  const nodeMat = new THREE.MeshBasicMaterial({ color: COLOR_NODE, wireframe: true });
+  const entryMat = new THREE.MeshBasicMaterial({ color: COLOR_ENTRY, wireframe: true });
 
-  for (const mesh of objects.nodes) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-  }
-  objects.nodes = [];
+  const nodes = [];
+  const labels = [];
 
-  for (const sprite of objects.nodeLabels) {
-    scene.remove(sprite);
-    sprite.material.map.dispose();
-    sprite.material.dispose();
-  }
-  objects.nodeLabels = [];
-
-  for (const key of ['entrySprite', 'tortoiseSprite', 'hareSprite']) {
-    const sprite = objects[key];
-    if (!sprite) continue;
-    scene.remove(sprite);
-    sprite.material.map.dispose();
-    sprite.material.dispose();
-    objects[key] = null;
-  }
-}
-
-function buildThreeGraph(three, list, layout, width, height) {
-  clearSceneObjects(three);
-
-  const { scene, materials, colors, objects } = three;
-  const nodeGeom = new THREE.IcosahedronGeometry(10, 1);
-
-  // Nodes + labels
   for (let i = 0; i < list.total; i++) {
-    const pos = layout.positions[i];
-    const p = toSceneXY(pos.x, pos.y, width, height);
+    const p = positions[i];
+    const mat = i === list.entry ? entryMat : nodeMat;
+    const mesh = new THREE.Mesh(nodeGeom, mat);
+    mesh.position.copy(p);
+    group.add(mesh);
+    nodes.push(mesh);
 
-    const node = new THREE.Mesh(nodeGeom, materials.nodeMaterial);
-    node.position.set(p.x, p.y, 0);
-    node.userData.index = i;
-    objects.nodes.push(node);
-    scene.add(node);
-
-    const label = makeTextSprite(String(i), colors.labelColor, 30);
-    label.position.set(p.x, p.y, 1);
-    label.scale.set(18, 18, 1);
-    objects.nodeLabels.push(label);
-    scene.add(label);
+    const label = makeTextSprite(String(i), COLOR_LABEL, 36);
+    label.position.set(p.x, p.y, NODE_RADIUS + 6);
+    label.scale.set(10, 10, 1);
+    group.add(label);
+    labels.push(label);
   }
 
-  // Edges as line segments (no arrowheads)
-  const positions = new Float32Array(list.total * 2 * 3);
+  // Edges
+  const edgeVerts = new Float32Array(list.total * 6);
   for (let i = 0; i < list.total; i++) {
-    const from = layout.positions[i];
-    const to = layout.positions[list.next[i]];
-    const a = toSceneXY(from.x, from.y, width, height);
-    const b = toSceneXY(to.x, to.y, width, height);
-
+    const a = positions[i];
+    const b = positions[list.next[i]];
     const base = i * 6;
-    positions[base + 0] = a.x;
-    positions[base + 1] = a.y;
-    positions[base + 2] = -2;
-    positions[base + 3] = b.x;
-    positions[base + 4] = b.y;
-    positions[base + 5] = -2;
+    edgeVerts[base]     = a.x;
+    edgeVerts[base + 1] = a.y;
+    edgeVerts[base + 2] = a.z;
+    edgeVerts[base + 3] = b.x;
+    edgeVerts[base + 4] = b.y;
+    edgeVerts[base + 5] = b.z;
   }
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const edgeLines = new THREE.LineSegments(geom, materials.lineMaterial);
-  objects.edgeLines = edgeLines;
-  scene.add(edgeLines);
+  const edgeGeom = new THREE.BufferGeometry();
+  edgeGeom.setAttribute('position', new THREE.BufferAttribute(edgeVerts, 3));
+  const edgeMat = new THREE.LineBasicMaterial({ color: COLOR_EDGE, transparent: true, opacity: 0.35 });
+  group.add(new THREE.LineSegments(edgeGeom, edgeMat));
 
-  // Entry + pointers
-  objects.entrySprite = makeTextSprite('E', colors.pointerColorH, 34);
-  objects.entrySprite.scale.set(22, 22, 1);
-  objects.entrySprite.renderOrder = 11;
-  scene.add(objects.entrySprite);
+  // Pointer meshes (tortoise = green sphere, hare = red sphere)
+  const ptrGeom = new THREE.IcosahedronGeometry(POINTER_RADIUS, 2);
+  const tortoiseMat = new THREE.MeshBasicMaterial({ color: COLOR_TORTOISE, wireframe: true });
+  const hareMat = new THREE.MeshBasicMaterial({ color: COLOR_HARE, wireframe: true });
 
-  objects.tortoiseSprite = makeTextSprite('T', colors.pointerColorT, 34);
-  objects.tortoiseSprite.scale.set(22, 22, 1);
-  objects.tortoiseSprite.renderOrder = 11;
-  scene.add(objects.tortoiseSprite);
+  const tortoiseMesh = new THREE.Mesh(ptrGeom, tortoiseMat);
+  const hareMesh = new THREE.Mesh(ptrGeom, hareMat);
+  tortoiseMesh.renderOrder = 5;
+  hareMesh.renderOrder = 5;
+  group.add(tortoiseMesh);
+  group.add(hareMesh);
 
-  objects.hareSprite = makeTextSprite('H', colors.pointerColorH, 34);
-  objects.hareSprite.scale.set(22, 22, 1);
-  objects.hareSprite.renderOrder = 11;
-  scene.add(objects.hareSprite);
+  // Pointer label sprites
+  const tLabel = makeTextSprite('T', '#16a34a', 42);
+  tLabel.scale.set(11, 11, 1);
+  group.add(tLabel);
 
-  nodeGeom.dispose();
+  const hLabel = makeTextSprite('H', '#dc2626', 42);
+  hLabel.scale.set(11, 11, 1);
+  group.add(hLabel);
+
+  scene.add(group);
+
+  return { group, nodes, labels, tortoiseMesh, hareMesh, tLabel, hLabel };
 }
 
-function updateThreePointers(three, state, width, height) {
-  const { list, layout, tortoise, hare, entry } = state;
-  const { objects, materials } = three;
+function positionPointers(graph, positions, tIdx, hIdx) {
+  const tPos = positions[tIdx];
+  const hPos = positions[hIdx];
+  const offset = NODE_RADIUS + POINTER_RADIUS + 2;
 
-  if (!list || !layout) return;
+  graph.tortoiseMesh.position.set(tPos.x, tPos.y - offset, tPos.z);
+  graph.hareMesh.position.set(hPos.x, hPos.y + offset, hPos.z);
 
-  // Reset all node materials
-  for (const mesh of objects.nodes) mesh.material = materials.nodeMaterial;
-
-  // Highlight nodes under pointers
-  if (objects.nodes[tortoise]) objects.nodes[tortoise].material = materials.nodeHighlightT;
-  if (objects.nodes[hare]) objects.nodes[hare].material = materials.nodeHighlightH;
-
-  const entryPos = toSceneXY(layout.positions[entry].x, layout.positions[entry].y, width, height);
-  objects.entrySprite.position.set(entryPos.x, entryPos.y + 24, 2);
-
-  const tPos = toSceneXY(layout.positions[tortoise].x, layout.positions[tortoise].y, width, height);
-  objects.tortoiseSprite.position.set(tPos.x, tPos.y - 28, 2);
-
-  const hPos = toSceneXY(layout.positions[hare].x, layout.positions[hare].y, width, height);
-  objects.hareSprite.position.set(hPos.x, hPos.y - 52, 2);
+  graph.tLabel.position.set(tPos.x, tPos.y - offset - 8, tPos.z + 4);
+  graph.hLabel.position.set(hPos.x, hPos.y + offset + 8, hPos.z + 4);
 }
+
+/* ── Floyd's cycle detection state machine ──────────────────── */
+
+function createFloydState() {
+  return { tortoise: 0, hare: 0, phase: 'phase1', done: false, foundEntry: null };
+}
+
+/** Advance one tick. Returns a status message. */
+function floydStep(s, list) {
+  const { next } = list;
+
+  if (s.phase === 'phase1') {
+    // Tortoise moves 1, hare moves 2
+    s.tortoise = next[s.tortoise];
+    s.hare = next[next[s.hare]];
+
+    if (s.tortoise === s.hare) {
+      s.phase = 'phase2';
+      // Standard Floyd: reset tortoise to head, keep hare at meeting point
+      s.tortoise = 0;
+      return `Met at node ${s.hare}. Starting phase 2…`;
+    }
+    return `Phase 1 — T:${s.tortoise}  H:${s.hare}`;
+  }
+
+  if (s.phase === 'phase2') {
+    // Both move 1 step
+    s.tortoise = next[s.tortoise];
+    s.hare = next[s.hare];
+
+    if (s.tortoise === s.hare) {
+      s.phase = 'done';
+      s.done = true;
+      s.foundEntry = s.tortoise;
+      return `Cycle entry found at node ${s.foundEntry}!`;
+    }
+    return `Phase 2 — T:${s.tortoise}  H:${s.hare}`;
+  }
+
+  return `Cycle entry: node ${s.foundEntry}`;
+}
+
+/* ── Main ───────────────────────────────────────────────────── */
 
 function init() {
-  const tailEl = document.getElementById('tailLen');
-  const cycleEl = document.getElementById('cycleLen');
-  const speedEl = document.getElementById('speed');
   const canvas = document.getElementById('vizCanvas');
   const statusEl = document.getElementById('status');
-
-  const btnBuild = document.getElementById('btnBuild');
-  const btnStep = document.getElementById('btnStep');
-  const btnPlay = document.getElementById('btnPlay');
-  const btnReset = document.getElementById('btnReset');
-
-  if (!tailEl || !cycleEl || !speedEl || !canvas || !statusEl) return;
-  if (!btnBuild || !btnStep || !btnPlay || !btnReset) return;
+  if (!canvas || !statusEl) return;
 
   if (!supportsWebGL()) {
-    statusEl.textContent = 'WebGL is not available in this browser.';
+    statusEl.textContent = 'WebGL is not available.';
     statusEl.classList.add('is-error');
     return;
   }
 
-  const three = initThree(canvas);
-  if (!three) {
-    statusEl.textContent = 'Could not initialize Three.js.';
-    statusEl.classList.add('is-error');
-    return;
-  }
+  const three = initScene(canvas);
+  resize(three, canvas);
 
-  let { width, height } = updateRendererSize(three, canvas);
+  const list = createList(TAIL_LEN, CYCLE_LEN);
+  const spread = 28;
+  const positions = buildLayout(list, spread);
 
+  // Centre the graph
+  const box = new THREE.Box3();
+  for (const p of positions) box.expandByPoint(p);
+  const centre = new THREE.Vector3();
+  box.getCenter(centre);
+  for (const p of positions) p.sub(centre);
+
+  // Adjust camera distance to fit graph
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const maxSpan = Math.max(size.x, size.y) * 0.7;
+  three.camera.position.set(0, -maxSpan * 0.6, maxSpan * 1.1);
+  three.camera.lookAt(0, 0, 0);
+
+  const graph = buildGraph(three.scene, list, positions);
+
+  let floyd = createFloydState();
+  positionPointers(graph, positions, floyd.tortoise, floyd.hare);
+  three.renderer.render(three.scene, three.camera);
+  statusEl.textContent = 'Phase 1 — T:0  H:0';
+
+  // Handle resize
   const ro = new ResizeObserver(() => {
-    ({ width, height } = updateRendererSize(three, canvas));
-    if (state.list && state.layout) {
-      state = { ...state, width, height, layout: buildLayout(state.list, width, height) };
-      buildThreeGraph(three, state.list, state.layout, width, height);
-      updateThreePointers(three, state, width, height);
-      three.renderer.render(three.scene, three.camera);
-    } else {
-      three.renderer.render(three.scene, three.camera);
-    }
+    resize(three, canvas);
+    three.renderer.render(three.scene, three.camera);
   });
   ro.observe(canvas);
 
-  let state = {
-    width,
-    height,
-    list: null,
-    layout: null,
-    tortoise: 0,
-    hare: 0,
-    phase: 'phase1',
-    meet: null,
-    entry: 0,
-    foundEntry: null,
-    steps: 0,
-    playing: false,
-    lastTick: 0,
-    acc: 0,
-  };
+  // Reduced motion: render once and stop
+  if (getReducedMotion()) {
+    statusEl.textContent = 'Reduced motion enabled — animation paused.';
+    return;
+  }
 
-  function setStatus(msg, isError = false) {
+  // Auto-play loop
+  let acc = 0;
+  let prev = 0;
+  let pauseUntil = 0;
+
+  function loop(ts) {
+    requestAnimationFrame(loop);
+
+    if (prev === 0) { prev = ts; return; }
+    const dt = Math.min(200, ts - prev);
+    prev = ts;
+
+    if (ts < pauseUntil) return;
+
+    acc += dt;
+    if (acc < STEP_INTERVAL) return;
+    acc -= STEP_INTERVAL;
+
+    if (floyd.done) {
+      // Restart after a pause
+      floyd = createFloydState();
+      positionPointers(graph, positions, floyd.tortoise, floyd.hare);
+      statusEl.textContent = 'Restarting… Phase 1 — T:0  H:0';
+      pauseUntil = ts + PAUSE_AFTER_DONE;
+      three.renderer.render(three.scene, three.camera);
+      return;
+    }
+
+    const msg = floydStep(floyd, list);
     statusEl.textContent = msg;
-    statusEl.classList.toggle('is-error', Boolean(isError));
-  }
-
-  function build() {
-    const tailLen = clampNumber(tailEl.value, 0, 30, 6);
-    const cycleLen = clampNumber(cycleEl.value, 1, 30, 9);
-
-    const list = createList(tailLen, cycleLen);
-    const layout = buildLayout(list, width, height);
-
-    state = {
-      ...state,
-      list,
-      layout,
-      tortoise: 0,
-      hare: 0,
-      phase: 'phase1',
-      meet: null,
-      entry: list.entry,
-      foundEntry: null,
-      steps: 0,
-      playing: false,
-      lastTick: 0,
-      acc: 0,
-    };
-
-    btnPlay.textContent = 'Play';
-
-    setStatus('Built a linked list with a tail + cycle. Use Step or Play.');
-    buildThreeGraph(three, list, layout, width, height);
-    updateThreePointers(three, state, width, height);
+    positionPointers(graph, positions, floyd.tortoise, floyd.hare);
     three.renderer.render(three.scene, three.camera);
-  }
 
-  function resetPointersOnly() {
-    if (!state.list) return;
-    state = {
-      ...state,
-      tortoise: 0,
-      hare: 0,
-      phase: 'phase1',
-      meet: null,
-      foundEntry: null,
-      steps: 0,
-    };
-    setStatus('Reset pointers.');
-    updateThreePointers(three, state, width, height);
-    three.renderer.render(three.scene, three.camera);
-  }
-
-  function stepOnce() {
-    if (!state.list) {
-      setStatus('Build a list first.', true);
-      return;
-    }
-
-    const { next } = state.list;
-
-    if (state.phase === 'done') {
-      setStatus(`Done. Cycle entry is node ${state.foundEntry}.`);
-      return;
-    }
-
-    if (state.phase === 'phase1') {
-      const newT = next[state.tortoise];
-      const newH = next[next[state.hare]];
-      const steps = state.steps + 1;
-
-      state = { ...state, tortoise: newT, hare: newH, steps };
-
-      if (newT === newH) {
-        // Phase 2: keep tortoise at the meeting point; reset hare to head.
-        // (Resetting either pointer is correct; this avoids the tortoise "jumping" back.)
-        state = { ...state, phase: 'phase2', meet: newT, tortoise: newT, hare: 0 };
-        setStatus(`Phase 1: met at node ${newT}. Phase 2: reset hare to head; move both 1× to find entry.`);
-      } else {
-        setStatus(`Phase 1: step ${steps}.`);
-      }
-
-      updateThreePointers(three, state, width, height);
-      three.renderer.render(three.scene, three.camera);
-      return;
-    }
-
-    if (state.phase === 'phase2') {
-      const newT = next[state.tortoise];
-      const newH = next[state.hare];
-      const steps = state.steps + 1;
-
-      state = { ...state, tortoise: newT, hare: newH, steps };
-
-      if (newT === newH) {
-        state = { ...state, phase: 'done', foundEntry: newT };
-        setStatus(`Done. Cycle entry is node ${newT}.`);
-      } else {
-        setStatus(`Phase 2: step ${steps}.`);
-      }
-
-      updateThreePointers(three, state, width, height);
-      three.renderer.render(three.scene, three.camera);
+    if (floyd.done) {
+      pauseUntil = ts + PAUSE_AFTER_DONE;
     }
   }
 
-  function getSpeed() {
-    const speed = clampNumber(speedEl.value, 1, 10, 2);
-    return speed;
-  }
-
-  function tick(ts) {
-    if (!state.playing) return;
-
-    if (state.lastTick === 0) state.lastTick = ts;
-    const dt = Math.min(250, ts - state.lastTick);
-    state.lastTick = ts;
-
-    const stepInterval = 1000 / getSpeed();
-    state.acc += dt;
-
-    while (state.acc >= stepInterval) {
-      state.acc -= stepInterval;
-      stepOnce();
-
-      if (state.phase === 'done') {
-        state.playing = false;
-        btnPlay.textContent = 'Play';
-        break;
-      }
-    }
-
-    if (state.playing) requestAnimationFrame(tick);
-  }
-
-  function togglePlay() {
-    if (prefersReducedMotion) {
-      setStatus('Reduced motion is enabled. Use Step instead of Play.');
-      return;
-    }
-
-    if (!state.list) {
-      setStatus('Build a list first.', true);
-      return;
-    }
-
-    state.playing = !state.playing;
-    btnPlay.textContent = state.playing ? 'Pause' : 'Play';
-
-    if (state.playing) {
-      state.lastTick = 0;
-      state.acc = 0;
-      requestAnimationFrame(tick);
-    }
-  }
-
-  btnBuild.addEventListener('click', build);
-  btnStep.addEventListener('click', () => {
-    if (state.playing) togglePlay();
-    stepOnce();
-  });
-  btnPlay.addEventListener('click', togglePlay);
-  btnReset.addEventListener('click', () => {
-    if (state.playing) togglePlay();
-    resetPointersOnly();
-  });
-
-  if (prefersReducedMotion) {
-    btnPlay.disabled = true;
-    setStatus('Reduced motion is enabled. Play is disabled; use Step.');
-  } else {
-    setStatus('Build a list to begin.');
-  }
-
-  build();
+  requestAnimationFrame(loop);
 }
 
 init();
