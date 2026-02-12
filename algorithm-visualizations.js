@@ -584,8 +584,10 @@ function initHashTableVisualization() {
     return;
   }
 
-  const BUCKETS_COUNT = 5;
+  const BUCKETS_COUNT = 10;
   const SAMPLE_SIZE = 12;
+  const HASH_ANIMATION_MS = 650;
+  const reduceMotion = getReducedMotion();
 
   const colorEdge = numberToCssHex(COLOR_EDGE);
   const colorLabel = COLOR_LABEL;
@@ -598,6 +600,7 @@ function initHashTableVisualization() {
     stepIndex: 0,
     width: 0,
     height: 0,
+    animation: null,
   };
 
   function createNumbers() {
@@ -624,6 +627,13 @@ function initHashTableVisualization() {
       return;
     }
 
+    if (state.animation) {
+      const value = state.animation.value;
+      const bucket = value % BUCKETS_COUNT;
+      statusEl.textContent = `Dropping ${value} into bucket ${bucket} (hash: ${value} % ${BUCKETS_COUNT}).`;
+      return;
+    }
+
     if (state.stepIndex >= state.numbers.length) {
       statusEl.textContent = `Done. Inserted ${state.numbers.length}/${state.numbers.length} values into ${BUCKETS_COUNT} buckets.`;
       return;
@@ -634,24 +644,86 @@ function initHashTableVisualization() {
     statusEl.textContent = `Step ${state.stepIndex}/${state.numbers.length}: next ${current} → bucket ${bucket} (hash: ${current} % ${BUCKETS_COUNT}).`;
   }
 
-  function drawNumberStrip(width, height) {
+  function getInputLayout(width) {
     const top = 18;
     const left = 18;
     const right = width - 18;
-    const chipGap = 8;
-    const chipW = Math.max(44, Math.min(58, Math.floor((right - left - chipGap * (SAMPLE_SIZE - 1)) / SAMPLE_SIZE)));
-    const chipH = 30;
-    const rowY = top + 24;
+    const gap = 8;
+    const slotW = Math.max(38, Math.floor((right - left - gap * (SAMPLE_SIZE - 1)) / SAMPLE_SIZE));
+    const radius = Math.max(14, Math.min(20, Math.floor(slotW * 0.38)));
+    const rowCenterY = top + 34;
+    return { top, left, gap, slotW, radius, rowCenterY };
+  }
+
+  function getInputBallCenter(index, width) {
+    const layout = getInputLayout(width);
+    const x = layout.left + index * (layout.slotW + layout.gap) + layout.slotW / 2;
+    const y = layout.rowCenterY;
+    return { x, y, radius: layout.radius };
+  }
+
+  function getBucketLayout(startY, width, height) {
+    const marginX = 18;
+    const cols = 5;
+    const rows = 2;
+    const gapX = 10;
+    const gapY = 10;
+    const bucketW = Math.floor((width - marginX * 2 - gapX * (cols - 1)) / cols);
+    const availableH = Math.max(220, height - startY - 18);
+    const bucketH = Math.floor((availableH - gapY) / rows);
+    const boxes = [];
+
+    for (let i = 0; i < BUCKETS_COUNT; i++) {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const x = marginX + col * (bucketW + gapX);
+      const y = startY + row * (bucketH + gapY);
+      boxes.push({ x, y, w: bucketW, h: bucketH });
+    }
+
+    return { boxes };
+  }
+
+  function getBucketBallSlot(bucketLayout, bucketIndex, slotIndex) {
+    const box = bucketLayout.boxes[bucketIndex];
+    const radius = Math.max(9, Math.min(13, Math.floor(box.w * 0.12)));
+    const rowCapacity = Math.max(1, Math.floor((box.w - 20) / (radius * 2 + 6)));
+    const row = Math.floor(slotIndex / rowCapacity);
+    const col = slotIndex % rowCapacity;
+    const x = box.x + 14 + radius + col * (radius * 2 + 6);
+    const y = box.y + 34 + radius + row * (radius * 2 + 6);
+    return { x, y, radius };
+  }
+
+  function drawBall(x, y, radius, stroke, value, lineWidth = 2) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+
+    ctx.fillStyle = colorLabel;
+    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(value), x, y);
+  }
+
+  function drawNumberStrip(width) {
+    const layout = getInputLayout(width);
 
     ctx.fillStyle = colorLabel;
     ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Input numbers (0-100)', left, top);
+    ctx.fillText('Input numbers (0-100)', layout.left, layout.top);
 
     for (let i = 0; i < state.numbers.length; i++) {
-      const x = left + i * (chipW + chipGap);
-      const y = rowY;
+      if (state.animation && i === state.stepIndex) continue;
+
+      const { x, y, radius } = getInputBallCenter(i, width);
       let stroke = colorPending;
       let lineWidth = 2;
       if (i < state.stepIndex) {
@@ -663,38 +735,22 @@ function initHashTableVisualization() {
         lineWidth = 3;
       }
 
-      ctx.beginPath();
-      ctx.roundRect(x, y, chipW, chipH, 8);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
-      ctx.stroke();
-
-      ctx.fillStyle = colorLabel;
-      ctx.font = '700 14px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(String(state.numbers[i]), x + chipW / 2, y + chipH / 2);
+      drawBall(x, y, radius, stroke, state.numbers[i], lineWidth);
     }
 
-    return rowY + chipH + 20;
+    return layout.rowCenterY + layout.radius + 20;
   }
 
   function drawBuckets(startY, width, height) {
     const buckets = getBuckets();
-    const marginX = 18;
-    const gap = 10;
-    const cols = BUCKETS_COUNT;
-    const bucketW = Math.floor((width - marginX * 2 - gap * (cols - 1)) / cols);
-    const bucketH = Math.max(180, height - startY - 18);
-    const innerPad = 10;
-    const itemH = 24;
-    const itemGap = 6;
+    const layout = getBucketLayout(startY, width, height);
 
-    for (let i = 0; i < cols; i++) {
-      const x = marginX + i * (bucketW + gap);
-      const y = startY;
+    for (let i = 0; i < BUCKETS_COUNT; i++) {
+      const box = layout.boxes[i];
+      const x = box.x;
+      const y = box.y;
+      const bucketW = box.w;
+      const bucketH = box.h;
 
       ctx.beginPath();
       ctx.roundRect(x, y, bucketW, bucketH, 10);
@@ -712,24 +768,13 @@ function initHashTableVisualization() {
 
       const values = buckets[i];
       for (let j = 0; j < values.length; j++) {
-        const itemY = y + 30 + innerPad + j * (itemH + itemGap);
-        if (itemY + itemH > y + bucketH - innerPad) break;
-
-        ctx.beginPath();
-        ctx.roundRect(x + innerPad, itemY, bucketW - innerPad * 2, itemH, 7);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-        ctx.strokeStyle = colorInserted;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.fillStyle = colorLabel;
-        ctx.font = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(values[j]), x + bucketW / 2, itemY + itemH / 2);
+        const pos = getBucketBallSlot(layout, i, j);
+        if (pos.y + pos.radius > y + bucketH - 10) break;
+        drawBall(pos.x, pos.y, pos.radius, colorInserted, values[j], 2);
       }
     }
+
+    return layout;
   }
 
   function draw() {
@@ -740,8 +785,17 @@ function initHashTableVisualization() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const bucketsStartY = drawNumberStrip(width, height);
-    drawBuckets(bucketsStartY, width, height);
+    const bucketsStartY = drawNumberStrip(width);
+    const bucketLayout = drawBuckets(bucketsStartY, width, height);
+
+    if (state.animation) {
+      const progress = Math.min(1, state.animation.progress);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const x = state.animation.fromX + (state.animation.toX - state.animation.fromX) * eased;
+      const y = state.animation.fromY + (state.animation.toY - state.animation.fromY) * eased;
+      const slot = getBucketBallSlot(bucketLayout, state.animation.bucket, state.animation.slotIndex);
+      drawBall(x, y, slot.radius, colorCurrent, state.animation.value, 3);
+    }
   }
 
   function render() {
@@ -750,14 +804,61 @@ function initHashTableVisualization() {
     state.height = height;
     draw();
     setStatus();
-    nextBtn.disabled = state.stepIndex >= state.numbers.length;
+    nextBtn.disabled = state.stepIndex >= state.numbers.length || state.animation !== null;
+    generateBtn.disabled = state.animation !== null;
     resetBtn.disabled = state.stepIndex <= 0;
   }
 
   function regenerate() {
     state.numbers = createNumbers();
     state.stepIndex = 0;
+    state.animation = null;
     render();
+  }
+
+  function startInsertAnimation() {
+    if (state.animation || state.stepIndex >= state.numbers.length) return;
+
+    const { width, height } = resize2dCanvas(canvas);
+    state.width = width;
+    state.height = height;
+
+    const value = state.numbers[state.stepIndex];
+    const bucket = value % BUCKETS_COUNT;
+    const currentBuckets = getBuckets();
+    const slotIndex = currentBuckets[bucket].length;
+
+    const from = getInputBallCenter(state.stepIndex, width);
+    const bucketLayout = getBucketLayout(from.y + from.radius + 20, width, height);
+    const target = getBucketBallSlot(bucketLayout, bucket, slotIndex);
+
+    state.animation = {
+      value,
+      bucket,
+      slotIndex,
+      fromX: from.x,
+      fromY: from.y,
+      toX: target.x,
+      toY: target.y,
+      startTs: performance.now(),
+      progress: 0,
+    };
+
+    function tick(ts) {
+      if (!state.animation) return;
+      const elapsed = ts - state.animation.startTs;
+      state.animation.progress = elapsed / HASH_ANIMATION_MS;
+      if (state.animation.progress >= 1) {
+        state.animation = null;
+        state.stepIndex += 1;
+        render();
+        return;
+      }
+      render();
+      requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
   }
 
   generateBtn.addEventListener('click', () => {
@@ -765,12 +866,17 @@ function initHashTableVisualization() {
   });
 
   nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= state.numbers.length) return;
-    state.stepIndex += 1;
-    render();
+    if (state.stepIndex >= state.numbers.length || state.animation) return;
+    if (reduceMotion) {
+      state.stepIndex += 1;
+      render();
+      return;
+    }
+    startInsertAnimation();
   });
 
   resetBtn.addEventListener('click', () => {
+    state.animation = null;
     state.stepIndex = 0;
     render();
   });
