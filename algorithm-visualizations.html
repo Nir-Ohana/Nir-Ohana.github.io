@@ -122,6 +122,30 @@
           aria-atomic="true"
         ></div>
       </section>
+
+      <header class="page-header">
+        <h2>Hash table construction (5 buckets)</h2>
+        <p class="muted">
+          Insert numbers between 0 and 100 into 5 buckets using <strong>hash(n) = n % 5</strong>.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Hash table visualization">
+        <canvas
+          id="hashCanvas"
+          class="viz-canvas viz-canvas-hash"
+          role="img"
+          aria-label="Hash table insertion visualization with 5 buckets"
+        ></canvas>
+
+        <div class="actions" aria-label="Hash table controls">
+          <button id="hashGenerate" type="button" class="btn">Generate numbers</button>
+          <button id="hashNext" type="button" class="btn btn-primary">Insert next</button>
+          <button id="hashReset" type="button" class="btn">Reset</button>
+        </div>
+
+        <div id="hashStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
     </main>
 
     <footer class="site-footer">

@@ -562,9 +562,231 @@ function initTreeTraversalVisualization() {
   render();
 }
 
+function getRandomIntInclusive(min, max) {
+  const lo = Math.ceil(min);
+  const hi = Math.floor(max);
+  return Math.floor(Math.random() * (hi - lo + 1)) + lo;
+}
+
+function initHashTableVisualization() {
+  const canvas = document.getElementById('hashCanvas');
+  const statusEl = document.getElementById('hashStatus');
+  const generateBtn = document.getElementById('hashGenerate');
+  const nextBtn = document.getElementById('hashNext');
+  const resetBtn = document.getElementById('hashReset');
+
+  if (!canvas || !statusEl || !generateBtn || !nextBtn || !resetBtn) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    statusEl.textContent = 'Canvas 2D is not available.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  const BUCKETS_COUNT = 5;
+  const SAMPLE_SIZE = 12;
+
+  const colorEdge = numberToCssHex(COLOR_EDGE);
+  const colorLabel = COLOR_LABEL;
+  const colorCurrent = numberToCssHex(COLOR_MEET);
+  const colorInserted = numberToCssHex(COLOR_TORTOISE);
+  const colorPending = numberToCssHex(COLOR_NODE);
+
+  const state = {
+    numbers: [],
+    stepIndex: 0,
+    width: 0,
+    height: 0,
+  };
+
+  function createNumbers() {
+    const nums = [];
+    for (let i = 0; i < SAMPLE_SIZE; i++) {
+      nums.push(getRandomIntInclusive(0, 100));
+    }
+    return nums;
+  }
+
+  function getBuckets() {
+    const buckets = Array.from({ length: BUCKETS_COUNT }, () => []);
+    for (let i = 0; i < state.stepIndex; i++) {
+      const value = state.numbers[i];
+      const bucket = value % BUCKETS_COUNT;
+      buckets[bucket].push(value);
+    }
+    return buckets;
+  }
+
+  function setStatus() {
+    if (state.numbers.length === 0) {
+      statusEl.textContent = 'Generate numbers to start.';
+      return;
+    }
+
+    if (state.stepIndex >= state.numbers.length) {
+      statusEl.textContent = `Done. Inserted ${state.numbers.length}/${state.numbers.length} values into ${BUCKETS_COUNT} buckets.`;
+      return;
+    }
+
+    const current = state.numbers[state.stepIndex];
+    const bucket = current % BUCKETS_COUNT;
+    statusEl.textContent = `Step ${state.stepIndex}/${state.numbers.length}: next ${current} → bucket ${bucket} (hash: ${current} % ${BUCKETS_COUNT}).`;
+  }
+
+  function drawNumberStrip(width, height) {
+    const top = 18;
+    const left = 18;
+    const right = width - 18;
+    const chipGap = 8;
+    const chipW = Math.max(44, Math.min(58, Math.floor((right - left - chipGap * (SAMPLE_SIZE - 1)) / SAMPLE_SIZE)));
+    const chipH = 30;
+    const rowY = top + 24;
+
+    ctx.fillStyle = colorLabel;
+    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Input numbers (0-100)', left, top);
+
+    for (let i = 0; i < state.numbers.length; i++) {
+      const x = left + i * (chipW + chipGap);
+      const y = rowY;
+      let stroke = colorPending;
+      let lineWidth = 2;
+      if (i < state.stepIndex) {
+        stroke = colorInserted;
+        lineWidth = 2.5;
+      }
+      if (i === state.stepIndex && state.stepIndex < state.numbers.length) {
+        stroke = colorCurrent;
+        lineWidth = 3;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, y, chipW, chipH, 8);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+
+      ctx.fillStyle = colorLabel;
+      ctx.font = '700 14px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(state.numbers[i]), x + chipW / 2, y + chipH / 2);
+    }
+
+    return rowY + chipH + 20;
+  }
+
+  function drawBuckets(startY, width, height) {
+    const buckets = getBuckets();
+    const marginX = 18;
+    const gap = 10;
+    const cols = BUCKETS_COUNT;
+    const bucketW = Math.floor((width - marginX * 2 - gap * (cols - 1)) / cols);
+    const bucketH = Math.max(180, height - startY - 18);
+    const innerPad = 10;
+    const itemH = 24;
+    const itemGap = 6;
+
+    for (let i = 0; i < cols; i++) {
+      const x = marginX + i * (bucketW + gap);
+      const y = startY;
+
+      ctx.beginPath();
+      ctx.roundRect(x, y, bucketW, bucketH, 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = colorEdge;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      ctx.fillStyle = colorLabel;
+      ctx.font = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`Bucket ${i}`, x + bucketW / 2, y + 16);
+
+      const values = buckets[i];
+      for (let j = 0; j < values.length; j++) {
+        const itemY = y + 30 + innerPad + j * (itemH + itemGap);
+        if (itemY + itemH > y + bucketH - innerPad) break;
+
+        ctx.beginPath();
+        ctx.roundRect(x + innerPad, itemY, bucketW - innerPad * 2, itemH, 7);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = colorInserted;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = colorLabel;
+        ctx.font = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(values[j]), x + bucketW / 2, itemY + itemH / 2);
+      }
+    }
+  }
+
+  function draw() {
+    const { width, height } = state;
+    if (width <= 0 || height <= 0) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const bucketsStartY = drawNumberStrip(width, height);
+    drawBuckets(bucketsStartY, width, height);
+  }
+
+  function render() {
+    const { width, height } = resize2dCanvas(canvas);
+    state.width = width;
+    state.height = height;
+    draw();
+    setStatus();
+    nextBtn.disabled = state.stepIndex >= state.numbers.length;
+    resetBtn.disabled = state.stepIndex <= 0;
+  }
+
+  function regenerate() {
+    state.numbers = createNumbers();
+    state.stepIndex = 0;
+    render();
+  }
+
+  generateBtn.addEventListener('click', () => {
+    regenerate();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (state.stepIndex >= state.numbers.length) return;
+    state.stepIndex += 1;
+    render();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    state.stepIndex = 0;
+    render();
+  });
+
+  const ro = new ResizeObserver(() => {
+    render();
+  });
+  ro.observe(canvas);
+
+  regenerate();
+}
+
 function init() {
   initFloydVisualization();
   initTreeTraversalVisualization();
+  initHashTableVisualization();
 }
 
 init();

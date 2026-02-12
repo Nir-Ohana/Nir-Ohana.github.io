@@ -327,6 +327,10 @@ h1 {
   height: 420px;
 }
 
+.viz-canvas-hash {
+  height: 430px;
+}
+
 .input-compact {
   max-width: 180px;
 }
