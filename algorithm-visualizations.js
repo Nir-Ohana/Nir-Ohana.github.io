@@ -98,6 +98,65 @@ function resize({ renderer, camera }, canvas) {
   camera.updateProjectionMatrix();
 }
 
+function createVisualizationAutoplaySkill({
+  enabled,
+  stepInterval,
+  donePause,
+  isBusy,
+  isDone,
+  onStep,
+  onReset,
+}) {
+  if (!enabled) {
+    return { stop() {} };
+  }
+
+  let prev = 0;
+  let acc = 0;
+  let pauseUntil = 0;
+  let stopped = false;
+
+  function loop(ts) {
+    if (stopped) return;
+    requestAnimationFrame(loop);
+
+    if (prev === 0) {
+      prev = ts;
+      return;
+    }
+
+    const dt = Math.min(200, ts - prev);
+    prev = ts;
+
+    if (ts < pauseUntil) return;
+    if (isBusy && isBusy()) return;
+
+    acc += dt;
+    if (acc < stepInterval) return;
+    acc -= stepInterval;
+
+    if (isDone && isDone()) {
+      if (onReset) onReset();
+      pauseUntil = ts + donePause;
+      return;
+    }
+
+    if (onStep) onStep();
+
+    if (isDone && isDone()) {
+      pauseUntil = ts + donePause;
+    }
+  }
+
+  requestAnimationFrame(loop);
+
+  return {
+    stop() {
+      stopped = true;
+    },
+  };
+}
+
 function getGraphBounds(positions) {
   const box = new THREE.Box3();
   for (const p of positions) box.expandByPoint(p);
@@ -272,10 +331,14 @@ function initFloydVisualization() {
   const graph = buildGraph(three.scene, list, positions);
 
   let floyd = createFloydState();
-  positionPointers(graph, positions, floyd.tortoise, floyd.hare);
-  colorActiveNodes(graph, floyd.tortoise, floyd.hare);
-  three.renderer.render(three.scene, three.camera);
-  statusEl.textContent = 'T:0  H:0';
+  function renderFloyd(text) {
+    positionPointers(graph, positions, floyd.tortoise, floyd.hare);
+    colorActiveNodes(graph, floyd.tortoise, floyd.hare);
+    if (text) statusEl.textContent = text;
+    three.renderer.render(three.scene, three.camera);
+  }
+
+  renderFloyd('T:0  H:0');
 
   const ro = new ResizeObserver(() => {
     resize(three, canvas);
@@ -284,53 +347,26 @@ function initFloydVisualization() {
   });
   ro.observe(canvas);
 
-  if (getReducedMotion()) {
+  const reduceMotion = getReducedMotion();
+  if (reduceMotion) {
     statusEl.textContent = 'Reduced motion enabled — animation paused.';
     return;
   }
 
-  let acc = 0;
-  let prev = 0;
-  let pauseUntil = 0;
-
-  function loop(ts) {
-    requestAnimationFrame(loop);
-
-    if (prev === 0) {
-      prev = ts;
-      return;
-    }
-    const dt = Math.min(200, ts - prev);
-    prev = ts;
-
-    if (ts < pauseUntil) return;
-
-    acc += dt;
-    if (acc < STEP_INTERVAL) return;
-    acc -= STEP_INTERVAL;
-
-    if (floyd.done) {
+  createVisualizationAutoplaySkill({
+    enabled: true,
+    stepInterval: STEP_INTERVAL,
+    donePause: PAUSE_AFTER_DONE,
+    isDone: () => floyd.done,
+    onStep: () => {
+      const msg = floydStep(floyd, list);
+      renderFloyd(msg);
+    },
+    onReset: () => {
       floyd = createFloydState();
-      positionPointers(graph, positions, floyd.tortoise, floyd.hare);
-      colorActiveNodes(graph, floyd.tortoise, floyd.hare);
-      statusEl.textContent = 'Restarting… T:0  H:0';
-      pauseUntil = ts + PAUSE_AFTER_DONE;
-      three.renderer.render(three.scene, three.camera);
-      return;
-    }
-
-    const msg = floydStep(floyd, list);
-    statusEl.textContent = msg;
-    positionPointers(graph, positions, floyd.tortoise, floyd.hare);
-    colorActiveNodes(graph, floyd.tortoise, floyd.hare);
-    three.renderer.render(three.scene, three.camera);
-
-    if (floyd.done) {
-      pauseUntil = ts + PAUSE_AFTER_DONE;
-    }
-  }
-
-  requestAnimationFrame(loop);
+      renderFloyd('Restarting… T:0  H:0');
+    },
+  });
 }
 
 function buildTreeLayout() {
@@ -416,6 +452,7 @@ function initTreeTraversalVisualization() {
     width: 0,
     height: 0,
   };
+  const reduceMotion = getReducedMotion();
 
   const edgeColor = numberToCssHex(COLOR_EDGE);
   const labelColor = COLOR_LABEL;
@@ -560,6 +597,23 @@ function initTreeTraversalVisualization() {
   ro.observe(canvas);
 
   render();
+
+  createVisualizationAutoplaySkill({
+    enabled: !reduceMotion,
+    stepInterval: 1000,
+    donePause: 1800,
+    isDone: () => state.stepIndex >= getSequence().length,
+    onStep: () => {
+      const sequence = getSequence();
+      if (state.stepIndex >= sequence.length) return;
+      state.stepIndex += 1;
+      render();
+    },
+    onReset: () => {
+      state.stepIndex = 0;
+      render();
+    },
+  });
 }
 
 function getRandomIntInclusive(min, max) {
@@ -887,6 +941,21 @@ function initHashTableVisualization() {
   ro.observe(canvas);
 
   regenerate();
+
+  createVisualizationAutoplaySkill({
+    enabled: !reduceMotion,
+    stepInterval: 900,
+    donePause: 1800,
+    isBusy: () => state.animation !== null,
+    isDone: () => state.stepIndex >= state.numbers.length,
+    onStep: () => {
+      if (state.stepIndex >= state.numbers.length || state.animation) return;
+      startInsertAnimation();
+    },
+    onReset: () => {
+      regenerate();
+    },
+  });
 }
 
 function init() {
