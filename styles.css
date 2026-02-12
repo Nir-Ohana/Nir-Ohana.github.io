@@ -323,6 +323,22 @@ h1 {
   height: 640px;
 }
 
+.viz-canvas-tree {
+  height: 420px;
+}
+
+.input-compact {
+  max-width: 180px;
+}
+
+.algo-tortoise {
+  color: #16a34a;
+}
+
+.algo-hare {
+  color: #dc2626;
+}
+
 .legend {
   display: inline-block;
   min-width: 1.2em;

@@ -70,8 +70,8 @@
         <h2>Floyd’s cycle detection (Tortoise &amp; Hare)</h2>
         <p class="muted">
           Two pointers traverse a linked list: the
-          <strong style="color:#16a34a">tortoise</strong> moves one step, the
-          <strong style="color:#dc2626">hare</strong> moves two. If a cycle exists, they will
+          <strong class="algo-tortoise">tortoise</strong> moves one step, the
+          <strong class="algo-hare">hare</strong> moves two. If a cycle exists, they will
           eventually meet.
         </p>
       </header>
@@ -97,15 +97,14 @@
       <section class="panel" aria-label="Binary tree traversal visualization">
         <canvas
           id="treeCanvas"
-          class="viz-canvas"
-          style="height: 420px"
+          class="viz-canvas viz-canvas-tree"
           role="img"
           aria-label="Binary tree traversal visualization"
         ></canvas>
 
         <div class="actions" aria-label="Traversal controls">
           <label class="small" for="treeOrder">Traversal</label>
-          <select id="treeOrder" class="input" style="max-width: 180px">
+          <select id="treeOrder" class="input input-compact">
             <option value="inorder">Inorder</option>
             <option value="preorder">Preorder</option>
             <option value="postorder">Postorder</option>
