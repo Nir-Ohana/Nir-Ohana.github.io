@@ -436,7 +436,7 @@ function initTreeTraversalVisualization() {
     }
 
     if (state.stepIndex === 0) {
-      statusEl.textContent = `${capitalize(state.order)} traversal. Step 0/${sequence.length}.`;
+      statusEl.textContent = `${capitalize(state.order)} traversal. Start at root (${rootValue}). Step 0/${sequence.length}.`;
       return;
     }
 
@@ -455,7 +455,12 @@ function initTreeTraversalVisualization() {
 
     const sequence = getSequence();
     const visited = new Set(sequence.slice(0, state.stepIndex));
-    const current = state.stepIndex < sequence.length ? sequence[state.stepIndex] : null;
+    let current = null;
+    if (state.stepIndex === 0) {
+      current = rootValue;
+    } else if (state.stepIndex < sequence.length) {
+      current = sequence[state.stepIndex];
+    }
 
     ctx.strokeStyle = edgeColor;
     ctx.lineWidth = 2;
