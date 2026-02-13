@@ -1,13 +1,10 @@
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { getReducedMotion, supportsWebGL } from './bg-utils.js';
 
-const TAIL_LEN = 5;
-const CYCLE_LEN = 8;
-const STEP_INTERVAL = 800;
-const PAUSE_AFTER_DONE = 2400;
-const NODE_RADIUS = 8;
-const POINTER_RADIUS = 3.2;
-const POINTER_OFFSET = NODE_RADIUS + POINTER_RADIUS + 2;
+/* ───── Shared constants ─────────────────────────────────────────── */
+
+const FONT_SANS = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+const FONT_MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
 
 const COLOR_NODE = 0xd1d5db;
 const COLOR_EDGE = 0x6b7280;
@@ -19,6 +16,245 @@ const COLOR_LABEL = '#4b5563';
 function numberToCssHex(value) {
   return `#${value.toString(16).padStart(6, '0')}`;
 }
+
+/** Pre-resolved CSS color strings — avoids repeated numberToCssHex calls. */
+const CSS = Object.freeze({
+  node: numberToCssHex(COLOR_NODE),
+  edge: numberToCssHex(COLOR_EDGE),
+  tortoise: numberToCssHex(COLOR_TORTOISE),
+  hare: numberToCssHex(COLOR_HARE),
+  meet: numberToCssHex(COLOR_MEET),
+  label: COLOR_LABEL,
+});
+
+/* ───── Shared helpers ───────────────────────────────────────────── */
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function easeOutCubic(t) {
+  const k = clamp01(t);
+  return 1 - Math.pow(1 - k, 3);
+}
+
+function easeInOutCubic(t) {
+  const k = clamp01(t);
+  return k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+}
+
+function capitalize(word) {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+function getRandomIntInclusive(min, max) {
+  const lo = Math.ceil(min);
+  const hi = Math.floor(max);
+  return Math.floor(Math.random() * (hi - lo + 1)) + lo;
+}
+
+/** Resize a 2D canvas backing store to match its CSS size (clamped DPR). */
+function resize2dCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.round(rect.width * dpr));
+  const height = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width === width && canvas.height === height) {
+    return { width: rect.width, height: rect.height, changed: false };
+  }
+  canvas.width = width;
+  canvas.height = height;
+  return { width: rect.width, height: rect.height, changed: true };
+}
+
+/** Reset the canvas transform for the current DPR and clear the frame. */
+function clearCanvas(ctx, width, height) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+}
+
+/* ───── Autoplay engine ──────────────────────────────────────────── */
+
+function createVisualizationAutoplaySkill({
+  enabled,
+  stepInterval,
+  donePause,
+  isBusy,
+  isDone,
+  onStep,
+  onReset,
+}) {
+  if (!enabled) return { stop() {} };
+
+  let prev = 0;
+  let acc = 0;
+  let pauseUntil = 0;
+  let stopped = false;
+
+  function loop(ts) {
+    if (stopped) return;
+    requestAnimationFrame(loop);
+
+    if (prev === 0) { prev = ts; return; }
+
+    const dt = Math.min(200, ts - prev);
+    prev = ts;
+
+    if (ts < pauseUntil) return;
+    if (isBusy && isBusy()) return;
+
+    acc += dt;
+    if (acc < stepInterval) return;
+    acc -= stepInterval;
+
+    if (isDone && isDone()) {
+      if (onReset) onReset();
+      pauseUntil = ts + donePause;
+      return;
+    }
+
+    if (onStep) onStep();
+
+    if (isDone && isDone()) {
+      pauseUntil = ts + donePause;
+    }
+  }
+
+  requestAnimationFrame(loop);
+  return { stop() { stopped = true; } };
+}
+
+/* ───── Snapshot-based visualization framework (DRY) ─────────────── *
+ *                                                                     *
+ * Handles: DOM lookup, canvas resize, Prev/Next/Reset wiring,        *
+ * animated step transitions, ResizeObserver, and autoplay.            *
+ *                                                                     *
+ * Each visualization only needs to provide:                           *
+ *   buildSnapshots()  — returns the step array                        *
+ *   draw(ctx, state)  — renders one frame                             *
+ * ──────────────────────────────────────────────────────────────────── */
+
+function createSnapshotVisualization({
+  canvasId, statusId, prevId, nextId, resetId,
+  buildSnapshots, draw, animationMs = 700,
+}) {
+  const canvas = document.getElementById(canvasId);
+  const statusEl = document.getElementById(statusId);
+  const prevBtn = document.getElementById(prevId);
+  const nextBtn = document.getElementById(nextId);
+  const resetBtn = document.getElementById(resetId);
+
+  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    statusEl.textContent = 'Canvas 2D is not available.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  const reduceMotion = getReducedMotion();
+  const snapshots = buildSnapshots();
+  const state = { stepIndex: 0, width: 0, height: 0, animation: null };
+
+  function render() {
+    const { width, height } = resize2dCanvas(canvas);
+    state.width = width;
+    state.height = height;
+    clearCanvas(ctx, width, height);
+
+    const snapshot = snapshots[state.stepIndex];
+    const toSnapshot = state.animation ? snapshots[state.animation.toIndex] : snapshot;
+    const progress = state.animation ? easeInOutCubic(state.animation.progress) : 1;
+
+    draw(ctx, {
+      width, height, snapshot, toSnapshot, progress,
+      isAnimating: state.animation !== null,
+      stepIndex: state.stepIndex, snapshots,
+    });
+
+    statusEl.textContent = (state.animation ? toSnapshot : snapshot).text;
+    prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
+  }
+
+  function runStepAnimation(targetIndex) {
+    if (state.animation || targetIndex <= state.stepIndex || reduceMotion) {
+      state.stepIndex = targetIndex;
+      render();
+      return;
+    }
+
+    state.animation = { toIndex: targetIndex, startTs: performance.now(), progress: 0 };
+
+    function tick(ts) {
+      if (!state.animation) return;
+      state.animation.progress = clamp01((ts - state.animation.startTs) / animationMs);
+      if (state.animation.progress >= 1) {
+        state.stepIndex = state.animation.toIndex;
+        state.animation = null;
+      }
+      render();
+      if (state.animation) requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  prevBtn.addEventListener('click', () => {
+    if (state.stepIndex <= 0 || state.animation) return;
+    state.stepIndex -= 1;
+    render();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+    runStepAnimation(state.stepIndex + 1);
+  });
+
+  resetBtn.addEventListener('click', () => {
+    state.stepIndex = 0;
+    state.animation = null;
+    render();
+  });
+
+  new ResizeObserver(() => render()).observe(canvas);
+  render();
+
+  createVisualizationAutoplaySkill({
+    enabled: !reduceMotion,
+    stepInterval: 1000,
+    donePause: 1800,
+    isBusy: () => state.animation !== null,
+    isDone: () => state.stepIndex >= snapshots.length - 1,
+    onStep: () => {
+      if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+      runStepAnimation(state.stepIndex + 1);
+    },
+    onReset: () => {
+      state.stepIndex = 0;
+      state.animation = null;
+      render();
+    },
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Floyd's cycle detection (WebGL / Three.js)
+   ═══════════════════════════════════════════════════════════════════ */
+
+const TAIL_LEN = 5;
+const CYCLE_LEN = 8;
+const STEP_INTERVAL = 800;
+const PAUSE_AFTER_DONE = 2400;
+const NODE_RADIUS = 8;
+const POINTER_RADIUS = 3.2;
+const POINTER_OFFSET = NODE_RADIUS + POINTER_RADIUS + 2;
 
 function createList(tailLen, cycleLen) {
   const total = tailLen + cycleLen;
@@ -34,7 +270,7 @@ function buildLayout(list, spread) {
   const cycleLen = total - entry;
   const positions = new Array(total);
 
-  const ringR = cycleLen * spread / (2 * Math.PI);
+  const ringR = (cycleLen * spread) / (2 * Math.PI);
   const cycleX = entry * spread + ringR;
   const cycleY = 0;
   for (let k = 0; k < cycleLen; k++) {
@@ -48,8 +284,7 @@ function buildLayout(list, spread) {
 
   const entryPos = positions[entry];
   for (let i = 0; i < entry; i++) {
-    const x = i * spread;
-    positions[i] = new THREE.Vector3(x, entryPos.y, 0);
+    positions[i] = new THREE.Vector3(i * spread, entryPos.y, 0);
   }
 
   return positions;
@@ -62,7 +297,7 @@ function makeTextSprite(text, color, fontSize = 48) {
   canvas.height = size;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = color;
-  ctx.font = `700 ${fontSize}px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace`;
+  ctx.font = `700 ${fontSize}px ${FONT_MONO}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(text), size / 2, size / 2);
@@ -89,72 +324,13 @@ function initScene(canvas) {
   return { renderer, scene, camera };
 }
 
-function resize({ renderer, camera }, canvas) {
+function resizeWebGL({ renderer, camera }, canvas) {
   const rect = canvas.getBoundingClientRect();
   const w = Math.max(1, Math.round(rect.width));
   const h = Math.max(1, Math.round(rect.height));
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-}
-
-function createVisualizationAutoplaySkill({
-  enabled,
-  stepInterval,
-  donePause,
-  isBusy,
-  isDone,
-  onStep,
-  onReset,
-}) {
-  if (!enabled) {
-    return { stop() {} };
-  }
-
-  let prev = 0;
-  let acc = 0;
-  let pauseUntil = 0;
-  let stopped = false;
-
-  function loop(ts) {
-    if (stopped) return;
-    requestAnimationFrame(loop);
-
-    if (prev === 0) {
-      prev = ts;
-      return;
-    }
-
-    const dt = Math.min(200, ts - prev);
-    prev = ts;
-
-    if (ts < pauseUntil) return;
-    if (isBusy && isBusy()) return;
-
-    acc += dt;
-    if (acc < stepInterval) return;
-    acc -= stepInterval;
-
-    if (isDone && isDone()) {
-      if (onReset) onReset();
-      pauseUntil = ts + donePause;
-      return;
-    }
-
-    if (onStep) onStep();
-
-    if (isDone && isDone()) {
-      pauseUntil = ts + donePause;
-    }
-  }
-
-  requestAnimationFrame(loop);
-
-  return {
-    stop() {
-      stopped = true;
-    },
-  };
 }
 
 function getGraphBounds(positions) {
@@ -226,15 +402,11 @@ function buildGraph(scene, list, positions) {
   group.add(new THREE.LineSegments(edgeGeom, edgeMat));
 
   const ptrGeom = new THREE.IcosahedronGeometry(POINTER_RADIUS, 2);
-  const tortoiseMat = new THREE.MeshBasicMaterial({ color: COLOR_TORTOISE, wireframe: true });
-  const hareMat = new THREE.MeshBasicMaterial({ color: COLOR_HARE, wireframe: true });
-
-  const tortoiseMesh = new THREE.Mesh(ptrGeom, tortoiseMat);
-  const hareMesh = new THREE.Mesh(ptrGeom, hareMat);
+  const tortoiseMesh = new THREE.Mesh(ptrGeom, new THREE.MeshBasicMaterial({ color: COLOR_TORTOISE, wireframe: true }));
+  const hareMesh = new THREE.Mesh(ptrGeom, new THREE.MeshBasicMaterial({ color: COLOR_HARE, wireframe: true }));
   tortoiseMesh.renderOrder = 5;
   hareMesh.renderOrder = 5;
-  group.add(tortoiseMesh);
-  group.add(hareMesh);
+  group.add(tortoiseMesh, hareMesh);
 
   const tLabel = makeTextSprite('T', '#16a34a', 42);
   tLabel.scale.set(11, 11, 1);
@@ -247,27 +419,19 @@ function buildGraph(scene, list, positions) {
   scene.add(group);
 
   return {
-    group,
-    nodes,
-    tortoiseMesh,
-    hareMesh,
-    tLabel,
-    hLabel,
+    group, nodes, tortoiseMesh, hareMesh, tLabel, hLabel,
     materials: { nodeMat, tortoiseNodeMat, hareNodeMat, overlapNodeMat },
   };
 }
 
 function colorActiveNodes(graph, tIdx, hIdx) {
   const { nodes, materials } = graph;
-  for (let i = 0; i < nodes.length; i++) {
-    nodes[i].material = materials.nodeMat;
-  }
+  for (const node of nodes) node.material = materials.nodeMat;
 
   if (tIdx === hIdx) {
     nodes[tIdx].material = materials.overlapNodeMat;
     return;
   }
-
   nodes[tIdx].material = materials.tortoiseNodeMat;
   nodes[hIdx].material = materials.hareNodeMat;
 }
@@ -275,29 +439,10 @@ function colorActiveNodes(graph, tIdx, hIdx) {
 function positionPointers(graph, positions, tIdx, hIdx) {
   const tPos = positions[tIdx];
   const hPos = positions[hIdx];
-
   graph.tortoiseMesh.position.set(tPos.x, tPos.y - POINTER_OFFSET, tPos.z);
   graph.hareMesh.position.set(hPos.x, hPos.y + POINTER_OFFSET, hPos.z);
-
   graph.tLabel.position.set(tPos.x, tPos.y - POINTER_OFFSET - 8, tPos.z + 4);
   graph.hLabel.position.set(hPos.x, hPos.y + POINTER_OFFSET + 8, hPos.z + 4);
-}
-
-function createFloydState() {
-  return { tortoise: 0, hare: 0, done: false };
-}
-
-function floydStep(s, list) {
-  const { next } = list;
-
-  s.tortoise = next[s.tortoise];
-  s.hare = next[next[s.hare]];
-
-  if (s.tortoise === s.hare) {
-    s.done = true;
-    return `Cycle detected! Both met at node ${s.tortoise}.`;
-  }
-  return `T:${s.tortoise}  H:${s.hare}`;
 }
 
 function initFloydVisualization() {
@@ -312,10 +457,8 @@ function initFloydVisualization() {
   }
 
   const three = initScene(canvas);
-
   const list = createList(TAIL_LEN, CYCLE_LEN);
-  const spread = 28;
-  const positions = buildLayout(list, spread);
+  const positions = buildLayout(list, 28);
 
   const centerBox = new THREE.Box3();
   for (const p of positions) centerBox.expandByPoint(p);
@@ -324,31 +467,29 @@ function initFloydVisualization() {
   for (const p of positions) p.sub(center);
 
   const graphBounds = getGraphBounds(positions);
-
-  resize(three, canvas);
+  resizeWebGL(three, canvas);
   fitCameraToBox(three.camera, graphBounds);
 
   const graph = buildGraph(three.scene, list, positions);
 
-  let floyd = createFloydState();
+  let state = { tortoise: 0, hare: 0, done: false };
+
   function renderFloyd(text) {
-    positionPointers(graph, positions, floyd.tortoise, floyd.hare);
-    colorActiveNodes(graph, floyd.tortoise, floyd.hare);
+    positionPointers(graph, positions, state.tortoise, state.hare);
+    colorActiveNodes(graph, state.tortoise, state.hare);
     if (text) statusEl.textContent = text;
     three.renderer.render(three.scene, three.camera);
   }
 
   renderFloyd('T:0  H:0');
 
-  const ro = new ResizeObserver(() => {
-    resize(three, canvas);
+  new ResizeObserver(() => {
+    resizeWebGL(three, canvas);
     fitCameraToBox(three.camera, graphBounds);
     three.renderer.render(three.scene, three.camera);
-  });
-  ro.observe(canvas);
+  }).observe(canvas);
 
-  const reduceMotion = getReducedMotion();
-  if (reduceMotion) {
+  if (getReducedMotion()) {
     statusEl.textContent = 'Reduced motion enabled — animation paused.';
     return;
   }
@@ -357,35 +498,43 @@ function initFloydVisualization() {
     enabled: true,
     stepInterval: STEP_INTERVAL,
     donePause: PAUSE_AFTER_DONE,
-    isDone: () => floyd.done,
+    isDone: () => state.done,
     onStep: () => {
-      const msg = floydStep(floyd, list);
-      renderFloyd(msg);
+      const { next } = list;
+      state.tortoise = next[state.tortoise];
+      state.hare = next[next[state.hare]];
+      if (state.tortoise === state.hare) {
+        state.done = true;
+        renderFloyd(`Cycle detected! Both met at node ${state.tortoise}.`);
+      } else {
+        renderFloyd(`T:${state.tortoise}  H:${state.hare}`);
+      }
     },
     onReset: () => {
-      floyd = createFloydState();
+      state = { tortoise: 0, hare: 0, done: false };
       renderFloyd('Restarting… T:0  H:0');
     },
   });
 }
 
-function buildTreeLayout() {
-  return [
-    { value: 4, left: 2, right: 6, x: 0.5, y: 0.16 },
-    { value: 2, left: 1, right: 3, x: 0.3, y: 0.42 },
-    { value: 6, left: 5, right: 7, x: 0.7, y: 0.42 },
-    { value: 1, left: null, right: null, x: 0.18, y: 0.72 },
-    { value: 3, left: null, right: null, x: 0.42, y: 0.72 },
-    { value: 5, left: null, right: null, x: 0.58, y: 0.72 },
-    { value: 7, left: null, right: null, x: 0.82, y: 0.72 },
-  ];
-}
+/* ═══════════════════════════════════════════════════════════════════
+   Binary tree traversals (Canvas 2D)
+   ═══════════════════════════════════════════════════════════════════ */
+
+const TREE_NODES = [
+  { value: 4, left: 2, right: 6, x: 0.5, y: 0.16 },
+  { value: 2, left: 1, right: 3, x: 0.3, y: 0.42 },
+  { value: 6, left: 5, right: 7, x: 0.7, y: 0.42 },
+  { value: 1, left: null, right: null, x: 0.18, y: 0.72 },
+  { value: 3, left: null, right: null, x: 0.42, y: 0.72 },
+  { value: 5, left: null, right: null, x: 0.58, y: 0.72 },
+  { value: 7, left: null, right: null, x: 0.82, y: 0.72 },
+];
 
 function computeTraversalOrder(nodeMap, nodeValue, order, result) {
   if (nodeValue == null) return;
   const node = nodeMap.get(nodeValue);
   if (!node) return;
-
   if (order === 'preorder') result.push(node.value);
   computeTraversalOrder(nodeMap, node.left, order, result);
   if (order === 'inorder') result.push(node.value);
@@ -394,52 +543,12 @@ function computeTraversalOrder(nodeMap, nodeValue, order, result) {
 }
 
 function getTraversalOrders(treeNodes, rootValue) {
-  const nodeMap = new Map(treeNodes.map((node) => [node.value, node]));
-  const orders = {
-    inorder: [],
-    preorder: [],
-    postorder: [],
-  };
-
-  computeTraversalOrder(nodeMap, rootValue, 'inorder', orders.inorder);
-  computeTraversalOrder(nodeMap, rootValue, 'preorder', orders.preorder);
-  computeTraversalOrder(nodeMap, rootValue, 'postorder', orders.postorder);
-  return orders;
-}
-
-function resize2dCanvas(canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const width = Math.max(1, Math.round(rect.width * dpr));
-  const height = Math.max(1, Math.round(rect.height * dpr));
-  if (canvas.width === width && canvas.height === height) {
-    return { width: rect.width, height: rect.height, changed: false };
+  const nodeMap = new Map(treeNodes.map((n) => [n.value, n]));
+  const orders = { inorder: [], preorder: [], postorder: [] };
+  for (const key of Object.keys(orders)) {
+    computeTraversalOrder(nodeMap, rootValue, key, orders[key]);
   }
-  canvas.width = width;
-  canvas.height = height;
-  return { width: rect.width, height: rect.height, changed: true };
-}
-
-function capitalize(word) {
-  return word.charAt(0).toUpperCase() + word.slice(1);
-}
-
-function clamp01(value) {
-  return Math.max(0, Math.min(1, value));
-}
-
-function lerp(start, end, t) {
-  return start + (end - start) * t;
-}
-
-function easeOutCubic(t) {
-  const k = clamp01(t);
-  return 1 - Math.pow(1 - k, 3);
-}
-
-function easeInOutCubic(t) {
-  const k = clamp01(t);
-  return k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+  return orders;
 }
 
 function initTreeTraversalVisualization() {
@@ -459,114 +568,70 @@ function initTreeTraversalVisualization() {
     return;
   }
 
-  const treeNodes = buildTreeLayout();
-  const nodeMap = new Map(treeNodes.map((node) => [node.value, node]));
+  const nodeMap = new Map(TREE_NODES.map((n) => [n.value, n]));
   const rootValue = 4;
-  const orders = getTraversalOrders(treeNodes, rootValue);
-
-  const state = {
-    order: 'inorder',
-    stepIndex: 0,
-    width: 0,
-    height: 0,
-  };
+  const orders = getTraversalOrders(TREE_NODES, rootValue);
   const reduceMotion = getReducedMotion();
 
-  const edgeColor = numberToCssHex(COLOR_EDGE);
-  const labelColor = COLOR_LABEL;
-  const visitedColor = numberToCssHex(COLOR_TORTOISE);
-  const currentColor = numberToCssHex(COLOR_MEET);
-  const defaultNodeColor = numberToCssHex(COLOR_NODE);
+  const state = { order: 'inorder', stepIndex: 0, width: 0, height: 0 };
 
-  function getSequence() {
-    return orders[state.order] || [];
-  }
+  function seq() { return orders[state.order] || []; }
 
   function setStatus() {
-    const sequence = getSequence();
-    const visited = sequence.slice(0, state.stepIndex);
-    if (state.stepIndex >= sequence.length) {
-      statusEl.textContent = `${capitalize(state.order)} complete. Order: ${sequence.join(' → ')}`;
-      return;
+    const s = seq();
+    if (state.stepIndex >= s.length) {
+      statusEl.textContent = `${capitalize(state.order)} complete. Order: ${s.join(' → ')}`;
+    } else if (state.stepIndex === 0) {
+      statusEl.textContent = `${capitalize(state.order)} traversal. Start at root (${rootValue}). Step 0/${s.length}.`;
+    } else {
+      statusEl.textContent = `Step ${state.stepIndex}/${s.length}. Last: ${s[state.stepIndex - 1]}. Next: ${s[state.stepIndex]}.`;
     }
-
-    if (state.stepIndex === 0) {
-      statusEl.textContent = `${capitalize(state.order)} traversal. Start at root (${rootValue}). Step 0/${sequence.length}.`;
-      return;
-    }
-
-    const lastVisited = visited[visited.length - 1];
-    const nextNode = sequence[state.stepIndex];
-    statusEl.textContent = `Step ${state.stepIndex}/${sequence.length}. Last: ${lastVisited}. Next: ${nextNode}.`;
   }
 
   function drawTree() {
     const { width, height } = state;
     if (width <= 0 || height <= 0) return;
+    clearCanvas(ctx, width, height);
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    const s = seq();
+    const visited = new Set(s.slice(0, state.stepIndex));
+    const current = state.stepIndex === 0
+      ? rootValue
+      : state.stepIndex < s.length ? s[state.stepIndex] : null;
 
-    const sequence = getSequence();
-    const visited = new Set(sequence.slice(0, state.stepIndex));
-    let current = null;
-    if (state.stepIndex === 0) {
-      current = rootValue;
-    } else if (state.stepIndex < sequence.length) {
-      current = sequence[state.stepIndex];
-    }
-
-    ctx.strokeStyle = edgeColor;
+    ctx.strokeStyle = CSS.edge;
     ctx.lineWidth = 2;
-    for (const node of treeNodes) {
-      if (node.left != null) {
-        const child = nodeMap.get(node.left);
-        if (child) {
-          ctx.beginPath();
-          ctx.moveTo(node.x * width, node.y * height);
-          ctx.lineTo(child.x * width, child.y * height);
-          ctx.stroke();
-        }
-      }
-      if (node.right != null) {
-        const child = nodeMap.get(node.right);
-        if (child) {
-          ctx.beginPath();
-          ctx.moveTo(node.x * width, node.y * height);
-          ctx.lineTo(child.x * width, child.y * height);
-          ctx.stroke();
-        }
+    for (const node of TREE_NODES) {
+      for (const childVal of [node.left, node.right]) {
+        const child = childVal != null ? nodeMap.get(childVal) : null;
+        if (!child) continue;
+        ctx.beginPath();
+        ctx.moveTo(node.x * width, node.y * height);
+        ctx.lineTo(child.x * width, child.y * height);
+        ctx.stroke();
       }
     }
 
     const radius = Math.max(16, Math.min(24, Math.round(Math.min(width, height) * 0.05)));
 
-    for (const node of treeNodes) {
+    for (const node of TREE_NODES) {
       const x = node.x * width;
       const y = node.y * height;
-      let stroke = defaultNodeColor;
-      let lineWidth = 2;
-
-      if (visited.has(node.value)) {
-        stroke = visitedColor;
-        lineWidth = 3;
-      }
-      if (node.value === current) {
-        stroke = currentColor;
-        lineWidth = 4;
-      }
+      let stroke = CSS.node;
+      let lw = 2;
+      if (visited.has(node.value)) { stroke = CSS.tortoise; lw = 3; }
+      if (node.value === current) { stroke = CSS.meet; lw = 4; }
 
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
+      ctx.lineWidth = lw;
       ctx.stroke();
 
-      ctx.fillStyle = labelColor;
-      ctx.font = '700 18px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 18px ${FONT_SANS}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(node.value), x, y);
@@ -579,10 +644,8 @@ function initTreeTraversalVisualization() {
     state.height = height;
     drawTree();
     setStatus();
-
-    const sequence = getSequence();
     prevBtn.disabled = state.stepIndex <= 0;
-    nextBtn.disabled = state.stepIndex >= sequence.length;
+    nextBtn.disabled = state.stepIndex >= seq().length;
   }
 
   orderSelect.addEventListener('change', () => {
@@ -592,53 +655,31 @@ function initTreeTraversalVisualization() {
   });
 
   prevBtn.addEventListener('click', () => {
-    if (state.stepIndex <= 0) return;
-    state.stepIndex -= 1;
-    render();
+    if (state.stepIndex > 0) { state.stepIndex -= 1; render(); }
   });
 
   nextBtn.addEventListener('click', () => {
-    const sequence = getSequence();
-    if (state.stepIndex >= sequence.length) return;
-    state.stepIndex += 1;
-    render();
+    if (state.stepIndex < seq().length) { state.stepIndex += 1; render(); }
   });
 
-  resetBtn.addEventListener('click', () => {
-    state.stepIndex = 0;
-    render();
-  });
+  resetBtn.addEventListener('click', () => { state.stepIndex = 0; render(); });
 
-  const ro = new ResizeObserver(() => {
-    render();
-  });
-  ro.observe(canvas);
-
+  new ResizeObserver(() => render()).observe(canvas);
   render();
 
   createVisualizationAutoplaySkill({
     enabled: !reduceMotion,
     stepInterval: 1000,
     donePause: 1800,
-    isDone: () => state.stepIndex >= getSequence().length,
-    onStep: () => {
-      const sequence = getSequence();
-      if (state.stepIndex >= sequence.length) return;
-      state.stepIndex += 1;
-      render();
-    },
-    onReset: () => {
-      state.stepIndex = 0;
-      render();
-    },
+    isDone: () => state.stepIndex >= seq().length,
+    onStep: () => { if (state.stepIndex < seq().length) { state.stepIndex += 1; render(); } },
+    onReset: () => { state.stepIndex = 0; render(); },
   });
 }
 
-function getRandomIntInclusive(min, max) {
-  const lo = Math.ceil(min);
-  const hi = Math.floor(max);
-  return Math.floor(Math.random() * (hi - lo + 1)) + lo;
-}
+/* ═══════════════════════════════════════════════════════════════════
+   Hash table construction (Canvas 2D)
+   ═══════════════════════════════════════════════════════════════════ */
 
 function initHashTableVisualization() {
   const canvas = document.getElementById('hashCanvas');
@@ -656,193 +697,149 @@ function initHashTableVisualization() {
     return;
   }
 
-  const BUCKETS_COUNT = 10;
-  const SAMPLE_SIZE = 12;
-  const HASH_ANIMATION_MS = 650;
+  const BUCKETS = 10;
+  const SAMPLE = 12;
+  const ANIM_MS = 650;
   const reduceMotion = getReducedMotion();
 
-  const colorEdge = numberToCssHex(COLOR_EDGE);
-  const colorLabel = COLOR_LABEL;
-  const colorCurrent = numberToCssHex(COLOR_MEET);
-  const colorInserted = numberToCssHex(COLOR_TORTOISE);
-  const colorPending = numberToCssHex(COLOR_NODE);
-
-  const state = {
-    numbers: [],
-    stepIndex: 0,
-    width: 0,
-    height: 0,
-    animation: null,
-  };
+  const state = { numbers: [], stepIndex: 0, width: 0, height: 0, animation: null };
 
   function createNumbers() {
-    const nums = [];
-    for (let i = 0; i < SAMPLE_SIZE; i++) {
-      nums.push(getRandomIntInclusive(0, 100));
-    }
-    return nums;
+    return Array.from({ length: SAMPLE }, () => getRandomIntInclusive(0, 100));
   }
 
   function getBuckets() {
-    const buckets = Array.from({ length: BUCKETS_COUNT }, () => []);
+    const b = Array.from({ length: BUCKETS }, () => []);
     for (let i = 0; i < state.stepIndex; i++) {
-      const value = state.numbers[i];
-      const bucket = value % BUCKETS_COUNT;
-      buckets[bucket].push(value);
+      const v = state.numbers[i];
+      b[v % BUCKETS].push(v);
     }
-    return buckets;
+    return b;
   }
 
   function setStatus() {
-    if (state.numbers.length === 0) {
-      statusEl.textContent = 'Generate numbers to start.';
-      return;
-    }
-
+    if (!state.numbers.length) { statusEl.textContent = 'Generate numbers to start.'; return; }
     if (state.animation) {
-      const value = state.animation.value;
-      const bucket = value % BUCKETS_COUNT;
-      statusEl.textContent = `Dropping ${value} into bucket ${bucket} (hash: ${value} % ${BUCKETS_COUNT}).`;
+      const v = state.animation.value;
+      statusEl.textContent = `Dropping ${v} into bucket ${v % BUCKETS} (hash: ${v} % ${BUCKETS}).`;
       return;
     }
-
     if (state.stepIndex >= state.numbers.length) {
-      statusEl.textContent = `Done. Inserted ${state.numbers.length}/${state.numbers.length} values into ${BUCKETS_COUNT} buckets.`;
+      statusEl.textContent = `Done. Inserted ${state.numbers.length}/${state.numbers.length} values into ${BUCKETS} buckets.`;
       return;
     }
-
-    const current = state.numbers[state.stepIndex];
-    const bucket = current % BUCKETS_COUNT;
-    statusEl.textContent = `Step ${state.stepIndex}/${state.numbers.length}: next ${current} → bucket ${bucket} (hash: ${current} % ${BUCKETS_COUNT}).`;
+    const c = state.numbers[state.stepIndex];
+    statusEl.textContent = `Step ${state.stepIndex}/${state.numbers.length}: next ${c} → bucket ${c % BUCKETS} (hash: ${c} % ${BUCKETS}).`;
   }
 
+  /* Layout helpers */
+
   function getInputLayout(width) {
-    const top = 18;
     const left = 18;
     const right = width - 18;
     const gap = 8;
-    const slotW = Math.max(38, Math.floor((right - left - gap * (SAMPLE_SIZE - 1)) / SAMPLE_SIZE));
+    const slotW = Math.max(38, Math.floor((right - left - gap * (SAMPLE - 1)) / SAMPLE));
     const radius = Math.max(14, Math.min(20, Math.floor(slotW * 0.38)));
-    const rowCenterY = top + 34;
-    return { top, left, gap, slotW, radius, rowCenterY };
+    return { top: 18, left, gap, slotW, radius, rowCenterY: 52 };
   }
 
-  function getInputBallCenter(index, width) {
-    const layout = getInputLayout(width);
-    const x = layout.left + index * (layout.slotW + layout.gap) + layout.slotW / 2;
-    const y = layout.rowCenterY;
-    return { x, y, radius: layout.radius };
+  function getInputBallCenter(idx, width) {
+    const l = getInputLayout(width);
+    return { x: l.left + idx * (l.slotW + l.gap) + l.slotW / 2, y: l.rowCenterY, radius: l.radius };
   }
 
   function getBucketLayout(startY, width, height) {
-    const marginX = 18;
+    const mx = 18;
     const cols = 5;
-    const rows = 2;
     const gapX = 10;
     const gapY = 10;
-    const bucketW = Math.floor((width - marginX * 2 - gapX * (cols - 1)) / cols);
-    const availableH = Math.max(220, height - startY - 18);
-    const bucketH = Math.floor((availableH - gapY) / rows);
+    const bw = Math.floor((width - mx * 2 - gapX * (cols - 1)) / cols);
+    const bh = Math.floor((Math.max(220, height - startY - 18) - gapY) / 2);
     const boxes = [];
-
-    for (let i = 0; i < BUCKETS_COUNT; i++) {
-      const row = Math.floor(i / cols);
-      const col = i % cols;
-      const x = marginX + col * (bucketW + gapX);
-      const y = startY + row * (bucketH + gapY);
-      boxes.push({ x, y, w: bucketW, h: bucketH });
+    for (let i = 0; i < BUCKETS; i++) {
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      boxes.push({ x: mx + c * (bw + gapX), y: startY + r * (bh + gapY), w: bw, h: bh });
     }
-
     return { boxes };
   }
 
-  function getBucketBallSlot(bucketLayout, bucketIndex, slotIndex) {
-    const box = bucketLayout.boxes[bucketIndex];
-    const radius = Math.max(9, Math.min(13, Math.floor(box.w * 0.12)));
-    const rowCapacity = Math.max(1, Math.floor((box.w - 20) / (radius * 2 + 6)));
-    const row = Math.floor(slotIndex / rowCapacity);
-    const col = slotIndex % rowCapacity;
-    const x = box.x + 14 + radius + col * (radius * 2 + 6);
-    const y = box.y + 34 + radius + row * (radius * 2 + 6);
-    return { x, y, radius };
+  function getBucketBallSlot(layout, bi, si) {
+    const box = layout.boxes[bi];
+    const r = Math.max(9, Math.min(13, Math.floor(box.w * 0.12)));
+    const cap = Math.max(1, Math.floor((box.w - 20) / (r * 2 + 6)));
+    return {
+      x: box.x + 14 + r + (si % cap) * (r * 2 + 6),
+      y: box.y + 34 + r + Math.floor(si / cap) * (r * 2 + 6),
+      radius: r,
+    };
   }
 
-  function drawBall(x, y, radius, stroke, value, lineWidth = 2) {
+  function drawBall(x, y, r, stroke, value, lw = 2) {
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff';
     ctx.fill();
     ctx.strokeStyle = stroke;
-    ctx.lineWidth = lineWidth;
+    ctx.lineWidth = lw;
     ctx.stroke();
 
-    ctx.fillStyle = colorLabel;
-    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(value), x, y);
   }
 
-  function drawNumberStrip(width) {
-    const layout = getInputLayout(width);
+  /* Draw */
 
-    ctx.fillStyle = colorLabel;
-    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  function drawNumberStrip(width) {
+    const l = getInputLayout(width);
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Input numbers (0-100)', layout.left, layout.top);
+    ctx.fillText('Input numbers (0-100)', l.left, l.top);
 
     for (let i = 0; i < state.numbers.length; i++) {
       if (state.animation && i === state.stepIndex) continue;
-
       const { x, y, radius } = getInputBallCenter(i, width);
-      let stroke = colorPending;
-      let lineWidth = 2;
-      if (i < state.stepIndex) {
-        stroke = colorInserted;
-        lineWidth = 2.5;
-      }
-      if (i === state.stepIndex && state.stepIndex < state.numbers.length) {
-        stroke = colorCurrent;
-        lineWidth = 3;
-      }
-
-      drawBall(x, y, radius, stroke, state.numbers[i], lineWidth);
+      let stroke = CSS.node;
+      let lw = 2;
+      if (i < state.stepIndex) { stroke = CSS.tortoise; lw = 2.5; }
+      if (i === state.stepIndex && state.stepIndex < state.numbers.length) { stroke = CSS.meet; lw = 3; }
+      drawBall(x, y, radius, stroke, state.numbers[i], lw);
     }
 
-    return layout.rowCenterY + layout.radius + 20;
+    return l.rowCenterY + l.radius + 20;
   }
 
   function drawBuckets(startY, width, height) {
     const buckets = getBuckets();
     const layout = getBucketLayout(startY, width, height);
 
-    for (let i = 0; i < BUCKETS_COUNT; i++) {
+    for (let i = 0; i < BUCKETS; i++) {
       const box = layout.boxes[i];
-      const x = box.x;
-      const y = box.y;
-      const bucketW = box.w;
-      const bucketH = box.h;
 
       ctx.beginPath();
-      ctx.roundRect(x, y, bucketW, bucketH, 10);
+      ctx.roundRect(box.x, box.y, box.w, box.h, 10);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
-      ctx.strokeStyle = colorEdge;
+      ctx.strokeStyle = CSS.edge;
       ctx.lineWidth = 1.8;
       ctx.stroke();
 
-      ctx.fillStyle = colorLabel;
-      ctx.font = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 13px ${FONT_SANS}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`Bucket ${i}`, x + bucketW / 2, y + 16);
+      ctx.fillText(`Bucket ${i}`, box.x + box.w / 2, box.y + 16);
 
-      const values = buckets[i];
-      for (let j = 0; j < values.length; j++) {
+      for (let j = 0; j < buckets[i].length; j++) {
         const pos = getBucketBallSlot(layout, i, j);
-        if (pos.y + pos.radius > y + bucketH - 10) break;
-        drawBall(pos.x, pos.y, pos.radius, colorInserted, values[j], 2);
+        if (pos.y + pos.radius > box.y + box.h - 10) break;
+        drawBall(pos.x, pos.y, pos.radius, CSS.tortoise, buckets[i][j]);
       }
     }
 
@@ -852,21 +849,17 @@ function initHashTableVisualization() {
   function draw() {
     const { width, height } = state;
     if (width <= 0 || height <= 0) return;
+    clearCanvas(ctx, width, height);
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const bucketsStartY = drawNumberStrip(width);
-    const bucketLayout = drawBuckets(bucketsStartY, width, height);
+    const bsy = drawNumberStrip(width);
+    const bl = drawBuckets(bsy, width, height);
 
     if (state.animation) {
-      const progress = Math.min(1, state.animation.progress);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const x = state.animation.fromX + (state.animation.toX - state.animation.fromX) * eased;
-      const y = state.animation.fromY + (state.animation.toY - state.animation.fromY) * eased;
-      const slot = getBucketBallSlot(bucketLayout, state.animation.bucket, state.animation.slotIndex);
-      drawBall(x, y, slot.radius, colorCurrent, state.animation.value, 3);
+      const e = easeOutCubic(Math.min(1, state.animation.progress));
+      const x = lerp(state.animation.fromX, state.animation.toX, e);
+      const y = lerp(state.animation.fromY, state.animation.toY, e);
+      const slot = getBucketBallSlot(bl, state.animation.bucket, state.animation.slotIndex);
+      drawBall(x, y, slot.radius, CSS.meet, state.animation.value, 3);
     }
   }
 
@@ -896,30 +889,22 @@ function initHashTableVisualization() {
     state.height = height;
 
     const value = state.numbers[state.stepIndex];
-    const bucket = value % BUCKETS_COUNT;
-    const currentBuckets = getBuckets();
-    const slotIndex = currentBuckets[bucket].length;
-
+    const bucket = value % BUCKETS;
+    const slotIndex = getBuckets()[bucket].length;
     const from = getInputBallCenter(state.stepIndex, width);
-    const bucketLayout = getBucketLayout(from.y + from.radius + 20, width, height);
-    const target = getBucketBallSlot(bucketLayout, bucket, slotIndex);
+    const bl = getBucketLayout(from.y + from.radius + 20, width, height);
+    const target = getBucketBallSlot(bl, bucket, slotIndex);
 
     state.animation = {
-      value,
-      bucket,
-      slotIndex,
-      fromX: from.x,
-      fromY: from.y,
-      toX: target.x,
-      toY: target.y,
-      startTs: performance.now(),
-      progress: 0,
+      value, bucket, slotIndex,
+      fromX: from.x, fromY: from.y,
+      toX: target.x, toY: target.y,
+      startTs: performance.now(), progress: 0,
     };
 
     function tick(ts) {
       if (!state.animation) return;
-      const elapsed = ts - state.animation.startTs;
-      state.animation.progress = elapsed / HASH_ANIMATION_MS;
+      state.animation.progress = (ts - state.animation.startTs) / ANIM_MS;
       if (state.animation.progress >= 1) {
         state.animation = null;
         state.stepIndex += 1;
@@ -933,17 +918,11 @@ function initHashTableVisualization() {
     requestAnimationFrame(tick);
   }
 
-  generateBtn.addEventListener('click', () => {
-    regenerate();
-  });
+  generateBtn.addEventListener('click', regenerate);
 
   nextBtn.addEventListener('click', () => {
     if (state.stepIndex >= state.numbers.length || state.animation) return;
-    if (reduceMotion) {
-      state.stepIndex += 1;
-      render();
-      return;
-    }
+    if (reduceMotion) { state.stepIndex += 1; render(); return; }
     startInsertAnimation();
   });
 
@@ -953,11 +932,7 @@ function initHashTableVisualization() {
     render();
   });
 
-  const ro = new ResizeObserver(() => {
-    render();
-  });
-  ro.observe(canvas);
-
+  new ResizeObserver(() => render()).observe(canvas);
   regenerate();
 
   createVisualizationAutoplaySkill({
@@ -970,1021 +945,516 @@ function initHashTableVisualization() {
       if (state.stepIndex >= state.numbers.length || state.animation) return;
       startInsertAnimation();
     },
-    onReset: () => {
-      regenerate();
-    },
+    onReset: regenerate,
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Fibonacci — dynamic programming (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
 function initFibonacciVisualization() {
-  const canvas = document.getElementById('fibCanvas');
-  const statusEl = document.getElementById('fibStatus');
-  const prevBtn = document.getElementById('fibPrev');
-  const nextBtn = document.getElementById('fibNext');
-  const resetBtn = document.getElementById('fibReset');
-
-  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    statusEl.textContent = 'Canvas 2D is not available.';
-    statusEl.classList.add('is-error');
-    return;
-  }
-
-  const reduceMotion = getReducedMotion();
   const n = 10;
-  const colorEdge = numberToCssHex(COLOR_EDGE);
-  const colorLabel = COLOR_LABEL;
-  const colorCurrent = numberToCssHex(COLOR_MEET);
-  const colorComputed = numberToCssHex(COLOR_TORTOISE);
-  const colorPending = numberToCssHex(COLOR_NODE);
 
   function buildSnapshots() {
     const dp = Array(n + 1).fill(null);
     dp[0] = 0;
     dp[1] = 1;
-
-    const snapshots = [
-      {
-        dp: [...dp],
-        current: null,
-        text: 'Base cases: F(0)=0, F(1)=1. Ready to compute from i=2.',
-        calc: null,
-      },
-    ];
+    const snaps = [{
+      dp: [...dp], current: null, calc: null,
+      text: 'Base cases: F(0)=0, F(1)=1. Ready to compute from i=2.',
+    }];
 
     for (let i = 2; i <= n; i++) {
       dp[i] = dp[i - 1] + dp[i - 2];
-      snapshots.push({
-        dp: [...dp],
-        current: i,
+      snaps.push({
+        dp: [...dp], current: i,
+        calc: { i, li: i - 1, ri: i - 2, lv: dp[i - 1], rv: dp[i - 2], res: dp[i] },
         text: `i=${i}: F(${i}) = F(${i - 1}) + F(${i - 2}) = ${dp[i - 1]} + ${dp[i - 2]} = ${dp[i]}`,
-        calc: {
-          i,
-          leftIndex: i - 1,
-          rightIndex: i - 2,
-          leftValue: dp[i - 1],
-          rightValue: dp[i - 2],
-          result: dp[i],
-        },
       });
     }
 
-    snapshots.push({
-      dp: [...dp],
-      current: null,
-      text: `Done. F(${n}) = ${dp[n]}.`,
-      calc: null,
-    });
-
-    return snapshots;
+    snaps.push({ dp: [...dp], current: null, calc: null, text: `Done. F(${n}) = ${dp[n]}.` });
+    return snaps;
   }
 
-  const snapshots = buildSnapshots();
-  const state = {
-    stepIndex: 0,
-    width: 0,
-    height: 0,
-    animation: null,
-  };
-
-  const FIB_ANIMATION_MS = 700;
-
-  function getLayout(width, height) {
-    const marginX = 16;
+  function cellLayout(w, h) {
     const gap = 8;
-    const cellW = Math.max(40, Math.floor((width - marginX * 2 - n * gap) / (n + 1)));
-    const cellH = Math.max(56, Math.min(76, Math.floor(height * 0.36)));
-    const usedW = cellW * (n + 1) + gap * n;
-    const startX = Math.max(12, Math.floor((width - usedW) / 2));
-    const y = Math.max(78, Math.floor((height - cellH) / 2));
-    return { gap, cellW, cellH, startX, y };
+    const cw = Math.max(40, Math.floor((w - 32 - n * gap) / (n + 1)));
+    const ch = Math.max(56, Math.min(76, Math.floor(h * 0.36)));
+    const total = cw * (n + 1) + gap * n;
+    const sx = Math.max(12, Math.floor((w - total) / 2));
+    const y = Math.max(78, Math.floor((h - ch) / 2));
+    return { gap, cw, ch, sx, y };
   }
 
-  function getCellCenter(layout, index) {
-    return {
-      x: layout.startX + index * (layout.cellW + layout.gap) + layout.cellW / 2,
-      y: layout.y + layout.cellH / 2,
-    };
-  }
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    const L = cellLayout(width, height);
+    const calc = isAnimating ? toSnapshot.calc : snapshot.calc;
+    const active = isAnimating ? toSnapshot : snapshot;
 
-  function draw() {
-    const { width, height } = state;
-    if (width <= 0 || height <= 0) return;
-
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const layout = getLayout(width, height);
-    const baseSnapshot = snapshots[state.stepIndex];
-    const activeSnapshot = state.animation ? snapshots[state.animation.toIndex] : baseSnapshot;
-    const animationProgress = state.animation ? easeInOutCubic(state.animation.progress) : 0;
-    const activeCalc = state.animation
-      ? snapshots[state.animation.toIndex].calc
-      : snapshots[state.stepIndex].calc;
-
-    ctx.fillStyle = colorLabel;
-    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(`n = ${n}`, 16, 20);
 
-    if (activeCalc) {
-      const eq = `F(${activeCalc.i}) = F(${activeCalc.leftIndex}) + F(${activeCalc.rightIndex}) = ${activeCalc.leftValue} + ${activeCalc.rightValue}`;
-      const showResult = !state.animation || animationProgress > 0.68;
-      ctx.fillText(showResult ? `${eq} = ${activeCalc.result}` : eq, 16, 42);
+    if (calc) {
+      const eq = `F(${calc.i}) = F(${calc.li}) + F(${calc.ri}) = ${calc.lv} + ${calc.rv}`;
+      ctx.fillText((progress > 0.68 || !isAnimating) ? `${eq} = ${calc.res}` : eq, 16, 42);
     }
 
     for (let i = 0; i <= n; i++) {
-      const x = layout.startX + i * (layout.cellW + layout.gap);
-      let value = baseSnapshot.dp[i];
+      const x = L.sx + i * (L.cw + L.gap);
 
-      if (!state.animation) {
-        value = activeSnapshot.dp[i];
-      } else if (activeCalc && i !== activeCalc.i && i <= activeCalc.leftIndex) {
-        value = activeSnapshot.dp[i];
-      } else if (activeCalc && i === activeCalc.i && animationProgress > 0.75) {
-        value = activeSnapshot.dp[i];
-      }
+      let val = snapshot.dp[i];
+      if (!isAnimating) val = toSnapshot.dp[i];
+      else if (calc && i !== calc.i && i <= calc.li) val = toSnapshot.dp[i];
+      else if (calc && i === calc.i && progress > 0.75) val = toSnapshot.dp[i];
 
-      let stroke = colorPending;
-      let lineWidth = 2;
-      if (value != null) {
-        stroke = colorComputed;
-      }
-      if (activeSnapshot.current === i) {
-        stroke = colorCurrent;
-        lineWidth = 3;
-      }
+      let stroke = CSS.node;
+      let lw = 2;
+      if (val != null) stroke = CSS.tortoise;
+      if (active.current === i) { stroke = CSS.meet; lw = 3; }
 
       ctx.beginPath();
-      ctx.roundRect(x, layout.y, layout.cellW, layout.cellH, 10);
+      ctx.roundRect(x, L.y, L.cw, L.ch, 10);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
+      ctx.lineWidth = lw;
       ctx.stroke();
 
-      ctx.fillStyle = colorLabel;
-      ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.fillStyle = CSS.label;
+      ctx.font = `600 11px ${FONT_SANS}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`i=${i}`, x + layout.cellW / 2, layout.y + 14);
+      ctx.fillText(`i=${i}`, x + L.cw / 2, L.y + 14);
 
-      ctx.font = '700 17px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.fillText(value == null ? '-' : String(value), x + layout.cellW / 2, layout.y + layout.cellH / 2 + 8);
+      ctx.font = `700 17px ${FONT_MONO}`;
+      ctx.fillText(val == null ? '-' : String(val), x + L.cw / 2, L.y + L.ch / 2 + 8);
     }
 
-    if (state.animation && activeCalc) {
-      const leftPos = getCellCenter(layout, activeCalc.leftIndex);
-      const rightPos = getCellCenter(layout, activeCalc.rightIndex);
-      const targetPos = getCellCenter(layout, activeCalc.i);
-      const travel = easeOutCubic(animationProgress);
+    /* Animated operand balls */
+    if (isAnimating && calc) {
+      const center = (idx) => ({
+        x: L.sx + idx * (L.cw + L.gap) + L.cw / 2,
+        y: L.y + L.ch / 2,
+      });
+      const lp = center(calc.li);
+      const rp = center(calc.ri);
+      const tp = center(calc.i);
+      const t = easeOutCubic(progress);
+      ctx.globalAlpha = progress < 0.85 ? 1 : 1 - (progress - 0.85) / 0.15;
 
-      const leftX = lerp(leftPos.x, targetPos.x, travel);
-      const leftY = lerp(leftPos.y, targetPos.y - 18, travel);
-      const rightX = lerp(rightPos.x, targetPos.x, travel);
-      const rightY = lerp(rightPos.y, targetPos.y + 18, travel);
+      for (const [src, val, offY] of [[lp, calc.lv, -18], [rp, calc.rv, 18]]) {
+        const bx = lerp(src.x, tp.x, t);
+        const by = lerp(src.y, tp.y + offY, t);
+        ctx.beginPath();
+        ctx.arc(bx, by, 14, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = CSS.meet;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.fillStyle = CSS.label;
+        ctx.font = `700 12px ${FONT_MONO}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(val), bx, by + 1);
+      }
 
-      ctx.globalAlpha = animationProgress < 0.85 ? 1 : 1 - (animationProgress - 0.85) / 0.15;
-
-      ctx.beginPath();
-      ctx.arc(leftX, leftY, 14, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.strokeStyle = colorCurrent;
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-      ctx.fillStyle = colorLabel;
-      ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(String(activeCalc.leftValue), leftX, leftY + 1);
-
-      ctx.beginPath();
-      ctx.arc(rightX, rightY, 14, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.strokeStyle = colorCurrent;
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-      ctx.fillStyle = colorLabel;
-      ctx.fillText(String(activeCalc.rightValue), rightX, rightY + 1);
       ctx.globalAlpha = 1;
     }
   }
 
-  function setStatus() {
-    if (state.animation) {
-      statusEl.textContent = snapshots[state.animation.toIndex].text;
-      return;
-    }
-    statusEl.textContent = snapshots[state.stepIndex].text;
-  }
-
-  function render() {
-    const { width, height } = resize2dCanvas(canvas);
-    state.width = width;
-    state.height = height;
-    draw();
-    setStatus();
-    prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
-    nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
-  }
-
-  function runStepAnimation(targetIndex) {
-    if (state.animation || targetIndex <= state.stepIndex || reduceMotion) {
-      state.stepIndex = targetIndex;
-      render();
-      return;
-    }
-
-    state.animation = {
-      toIndex: targetIndex,
-      startTs: performance.now(),
-      progress: 0,
-    };
-
-    function tick(ts) {
-      if (!state.animation) return;
-      const elapsed = ts - state.animation.startTs;
-      state.animation.progress = clamp01(elapsed / FIB_ANIMATION_MS);
-
-      if (state.animation.progress >= 1) {
-        state.stepIndex = state.animation.toIndex;
-        state.animation = null;
-        render();
-        return;
-      }
-
-      render();
-      requestAnimationFrame(tick);
-    }
-
-    requestAnimationFrame(tick);
-  }
-
-  prevBtn.addEventListener('click', () => {
-    if (state.stepIndex <= 0) return;
-    state.stepIndex -= 1;
-    render();
-  });
-
-  nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
-    runStepAnimation(state.stepIndex + 1);
-  });
-
-  resetBtn.addEventListener('click', () => {
-    state.stepIndex = 0;
-    state.animation = null;
-    render();
-  });
-
-  const ro = new ResizeObserver(() => {
-    render();
-  });
-  ro.observe(canvas);
-
-  render();
-
-  createVisualizationAutoplaySkill({
-    enabled: !reduceMotion,
-    stepInterval: 1000,
-    donePause: 1800,
-    isBusy: () => state.animation !== null,
-    isDone: () => state.stepIndex >= snapshots.length - 1,
-    onStep: () => {
-      if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
-      runStepAnimation(state.stepIndex + 1);
-    },
-    onReset: () => {
-      state.stepIndex = 0;
-      state.animation = null;
-      render();
-    },
+  createSnapshotVisualization({
+    canvasId: 'fibCanvas', statusId: 'fibStatus',
+    prevId: 'fibPrev', nextId: 'fibNext', resetId: 'fibReset',
+    buildSnapshots, draw, animationMs: 700,
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Merge two sorted lists (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
 function initMergeListsVisualization() {
-  const canvas = document.getElementById('mergeListsCanvas');
-  const statusEl = document.getElementById('mergeListsStatus');
-  const prevBtn = document.getElementById('mergeListsPrev');
-  const nextBtn = document.getElementById('mergeListsNext');
-  const resetBtn = document.getElementById('mergeListsReset');
-
-  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    statusEl.textContent = 'Canvas 2D is not available.';
-    statusEl.classList.add('is-error');
-    return;
-  }
-
-  const reduceMotion = getReducedMotion();
   const list1 = [1, 2, 4];
   const list2 = [1, 3, 4];
-
-  const colorLabel = COLOR_LABEL;
-  const colorCurrent = numberToCssHex(COLOR_MEET);
-  const colorConsumed = numberToCssHex(COLOR_TORTOISE);
-  const colorPending = numberToCssHex(COLOR_NODE);
-
-  const MERGE_LISTS_ANIMATION_MS = 700;
+  const totalLen = list1.length + list2.length;
 
   function buildSnapshots() {
-    const snapshots = [];
+    const snaps = [];
     let p1 = 0;
     let p2 = 0;
     const merged = [];
 
-    snapshots.push({
-      p1,
-      p2,
-      merged: [...merged],
+    snaps.push({
+      p1, p2, merged: [], pick: null,
       text: 'Start merge. Compare list1[p1] and list2[p2], take the smaller value.',
-      picked: null,
-      pickedFrom: null,
-      pickedSourceIndex: null,
-      mergedIndex: null,
     });
 
     while (p1 < list1.length && p2 < list2.length) {
       const takeLeft = list1[p1] <= list2[p2];
       const value = takeLeft ? list1[p1] : list2[p2];
+      const si = takeLeft ? p1 : p2;
       merged.push(value);
-      if (takeLeft) p1 += 1;
-      else p2 += 1;
+      if (takeLeft) p1 += 1; else p2 += 1;
 
-      snapshots.push({
-        p1,
-        p2,
-        merged: [...merged],
-        text: takeLeft
-          ? `Take ${value} from list1 (stable on ties).`
-          : `Take ${value} from list2.`,
-        picked: value,
-        pickedFrom: takeLeft ? 'list1' : 'list2',
-        pickedSourceIndex: takeLeft ? p1 - 1 : p2 - 1,
-        mergedIndex: merged.length - 1,
+      snaps.push({
+        p1, p2, merged: [...merged],
+        pick: { from: takeLeft ? 'list1' : 'list2', si, mi: merged.length - 1, value },
+        text: takeLeft ? `Take ${value} from list1 (stable on ties).` : `Take ${value} from list2.`,
       });
     }
 
     while (p1 < list1.length) {
-      const value = list1[p1];
-      merged.push(value);
-      p1 += 1;
-      snapshots.push({
-        p1,
-        p2,
-        merged: [...merged],
-        text: `List2 is exhausted. Append remaining ${value} from list1.`,
-        picked: value,
-        pickedFrom: 'list1',
-        pickedSourceIndex: p1 - 1,
-        mergedIndex: merged.length - 1,
+      merged.push(list1[p1]);
+      snaps.push({
+        p1: p1 + 1, p2, merged: [...merged],
+        pick: { from: 'list1', si: p1, mi: merged.length - 1, value: list1[p1] },
+        text: `List2 exhausted. Append ${list1[p1]} from list1.`,
       });
+      p1 += 1;
     }
 
     while (p2 < list2.length) {
-      const value = list2[p2];
-      merged.push(value);
-      p2 += 1;
-      snapshots.push({
-        p1,
-        p2,
-        merged: [...merged],
-        text: `List1 is exhausted. Append remaining ${value} from list2.`,
-        picked: value,
-        pickedFrom: 'list2',
-        pickedSourceIndex: p2 - 1,
-        mergedIndex: merged.length - 1,
+      merged.push(list2[p2]);
+      snaps.push({
+        p1, p2: p2 + 1, merged: [...merged],
+        pick: { from: 'list2', si: p2, mi: merged.length - 1, value: list2[p2] },
+        text: `List1 exhausted. Append ${list2[p2]} from list2.`,
       });
+      p2 += 1;
     }
 
-    snapshots.push({
-      p1,
-      p2,
-      merged: [...merged],
+    snaps.push({
+      p1, p2, merged: [...merged], pick: null,
       text: `Done. Merged list: ${merged.join(' → ')}.`,
-      picked: null,
-      pickedFrom: null,
-      pickedSourceIndex: null,
-      mergedIndex: null,
     });
-
-    return snapshots;
+    return snaps;
   }
 
-  const snapshots = buildSnapshots();
-  const totalMergedLen = list1.length + list2.length;
-  const state = {
-    stepIndex: 0,
-    width: 0,
-    height: 0,
-    animation: null,
-  };
+  /* Row layout helpers */
 
-  function getRowLayout(totalSlots) {
-    const marginX = 42;
+  function rowLayout(width, slots) {
+    const mx = 42;
     const gap = 12;
-    const radius = Math.max(16, Math.min(24, Math.floor((state.width - marginX * 2 - gap * (totalSlots - 1)) / (totalSlots * 2.4))));
-    const totalWidth = totalSlots * radius * 2 + (totalSlots - 1) * gap;
-    const startX = Math.max(24, Math.floor((state.width - totalWidth) / 2));
-    return { radius, gap, startX };
+    const r = Math.max(16, Math.min(24, Math.floor((width - mx * 2 - gap * (slots - 1)) / (slots * 2.4))));
+    const tw = slots * r * 2 + (slots - 1) * gap;
+    return { r, gap, sx: Math.max(24, Math.floor((width - tw) / 2)) };
   }
 
-  function getNodeCenter(rowY, totalSlots, index) {
-    const layout = getRowLayout(totalSlots);
-    return {
-      x: layout.startX + layout.radius + index * (layout.radius * 2 + layout.gap),
-      y: rowY + layout.radius,
-      radius: layout.radius,
-    };
+  function nodeCenter(width, rowY, slots, idx) {
+    const l = rowLayout(width, slots);
+    return { x: l.sx + l.r + idx * (l.r * 2 + l.gap), y: rowY + l.r, r: l.r };
   }
 
-  function drawRow(label, values, y, options = {}) {
-    const { pointerIndex = null, consumed = 0, totalSlots = values.length, mergedLen = 0 } = options;
-    const layout = getRowLayout(totalSlots);
+  function drawRow(ctx, width, label, values, y, opts) {
+    const { pointerIndex = null, consumed = 0, totalSlots = values.length, mergedLen = 0 } = opts;
+    const l = rowLayout(width, totalSlots);
 
-    ctx.fillStyle = colorLabel;
-    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, 14, y + layout.radius);
+    ctx.fillText(label, 14, y + l.r);
 
+    /* Arrows between nodes */
     for (let i = 0; i < totalSlots - 1; i++) {
-      const a = getNodeCenter(y, totalSlots, i);
-      const b = getNodeCenter(y, totalSlots, i + 1);
-      ctx.strokeStyle = numberToCssHex(COLOR_EDGE);
+      const a = nodeCenter(width, y, totalSlots, i);
+      const b = nodeCenter(width, y, totalSlots, i + 1);
+      ctx.strokeStyle = CSS.edge;
       ctx.lineWidth = 1.8;
       ctx.beginPath();
-      ctx.moveTo(a.x + a.radius, a.y);
-      ctx.lineTo(b.x - b.radius, b.y);
+      ctx.moveTo(a.x + a.r, a.y);
+      ctx.lineTo(b.x - b.r, b.y);
       ctx.stroke();
 
-      ctx.fillStyle = numberToCssHex(COLOR_EDGE);
-      ctx.font = '700 10px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.fillStyle = CSS.edge;
+      ctx.font = `700 10px ${FONT_SANS}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('▶', (a.x + b.x) / 2, a.y - 1);
     }
 
+    /* Nodes */
     for (let i = 0; i < totalSlots; i++) {
-      const center = getNodeCenter(y, totalSlots, i);
-      const hasValue = i < values.length;
-
-      let stroke = colorPending;
-      let lineWidth = 2;
-      if (i < consumed || (label === 'merged' && i < mergedLen)) {
-        stroke = colorConsumed;
-      }
-      if (pointerIndex != null && i === pointerIndex) {
-        stroke = colorCurrent;
-        lineWidth = 3;
-      }
+      const c = nodeCenter(width, y, totalSlots, i);
+      const hasVal = i < values.length;
+      let stroke = CSS.node;
+      let lw = 2;
+      if (i < consumed || (label === 'merged' && i < mergedLen)) stroke = CSS.tortoise;
+      if (pointerIndex != null && i === pointerIndex) { stroke = CSS.meet; lw = 3; }
 
       ctx.beginPath();
-      ctx.arc(center.x, center.y, center.radius, 0, Math.PI * 2);
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
+      ctx.lineWidth = lw;
       ctx.stroke();
 
-      if (hasValue) {
-        ctx.fillStyle = colorLabel;
-        ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      if (hasVal) {
+        ctx.fillStyle = CSS.label;
+        ctx.font = `700 16px ${FONT_MONO}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(String(values[i]), center.x, center.y + 1);
+        ctx.fillText(String(values[i]), c.x, c.y + 1);
       }
 
       if (pointerIndex != null && i === pointerIndex) {
-        ctx.fillStyle = colorCurrent;
-        ctx.font = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.fillStyle = CSS.meet;
+        ctx.font = `700 13px ${FONT_SANS}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('↑', center.x, y - 14);
+        ctx.fillText('↑', c.x, y - 14);
       }
     }
   }
 
-  function draw() {
-    const { width, height } = state;
-    if (width <= 0 || height <= 0) return;
-
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const snapshot = snapshots[state.stepIndex];
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
     const rowGap = Math.max(24, Math.floor((height - 3 * 52 - 32) / 3));
     const y1 = 22;
     const y2 = y1 + 52 + rowGap;
     const y3 = y2 + 52 + rowGap;
 
-    drawRow('list1', list1, y1, {
+    drawRow(ctx, width, 'list1', list1, y1, {
       pointerIndex: snapshot.p1 < list1.length ? snapshot.p1 : null,
       consumed: snapshot.p1,
     });
-    drawRow('list2', list2, y2, {
+    drawRow(ctx, width, 'list2', list2, y2, {
       pointerIndex: snapshot.p2 < list2.length ? snapshot.p2 : null,
       consumed: snapshot.p2,
     });
-    drawRow('merged', snapshot.merged, y3, {
+    drawRow(ctx, width, 'merged', snapshot.merged, y3, {
       pointerIndex: snapshot.merged.length > 0 ? snapshot.merged.length - 1 : null,
-      totalSlots: totalMergedLen,
+      totalSlots: totalLen,
       mergedLen: snapshot.merged.length,
     });
 
-    if (state.animation) {
-      const anim = state.animation;
-      const toSnapshot = snapshots[anim.toIndex];
-      if (toSnapshot.picked != null && toSnapshot.pickedFrom != null && toSnapshot.pickedSourceIndex != null && toSnapshot.mergedIndex != null) {
-        const p = easeInOutCubic(anim.progress);
-        const sourceRowY = toSnapshot.pickedFrom === 'list1' ? y1 : y2;
-        const sourceSlots = toSnapshot.pickedFrom === 'list1' ? list1.length : list2.length;
-        const sourceCenter = getNodeCenter(sourceRowY, sourceSlots, toSnapshot.pickedSourceIndex);
-        const targetCenter = getNodeCenter(y3, totalMergedLen, toSnapshot.mergedIndex);
+    /* Animated ball drop */
+    if (isAnimating && toSnapshot.pick) {
+      const pk = toSnapshot.pick;
+      const srcY = pk.from === 'list1' ? y1 : y2;
+      const srcSlots = pk.from === 'list1' ? list1.length : list2.length;
+      const src = nodeCenter(width, srcY, srcSlots, pk.si);
+      const tgt = nodeCenter(width, y3, totalLen, pk.mi);
+      const p = easeInOutCubic(progress);
+      const bx = lerp(src.x, tgt.x, p);
+      const by = lerp(src.y, tgt.y, p) + Math.sin(p * Math.PI) * 34;
 
-        const xPos = lerp(sourceCenter.x, targetCenter.x, p);
-        const arcLift = Math.sin(p * Math.PI) * 34;
-        const yPos = lerp(sourceCenter.y, targetCenter.y, p) + arcLift;
+      ctx.beginPath();
+      ctx.arc(bx, by, src.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = CSS.meet;
+      ctx.lineWidth = 3;
+      ctx.stroke();
 
-        ctx.beginPath();
-        ctx.arc(xPos, yPos, sourceCenter.radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-        ctx.strokeStyle = colorCurrent;
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        ctx.fillStyle = colorLabel;
-        ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(toSnapshot.picked), xPos, yPos + 1);
-      }
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 16px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(pk.value), bx, by + 1);
     }
   }
 
-  function render() {
-    const { width, height } = resize2dCanvas(canvas);
-    state.width = width;
-    state.height = height;
-    draw();
-    statusEl.textContent = state.animation
-      ? snapshots[state.animation.toIndex].text
-      : snapshots[state.stepIndex].text;
-    prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
-    nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
-  }
-
-  function runStepAnimation(targetIndex) {
-    if (state.animation || targetIndex <= state.stepIndex || reduceMotion) {
-      state.stepIndex = targetIndex;
-      render();
-      return;
-    }
-
-    state.animation = {
-      toIndex: targetIndex,
-      startTs: performance.now(),
-      progress: 0,
-    };
-
-    function tick(ts) {
-      if (!state.animation) return;
-      const elapsed = ts - state.animation.startTs;
-      state.animation.progress = clamp01(elapsed / MERGE_LISTS_ANIMATION_MS);
-
-      if (state.animation.progress >= 1) {
-        state.stepIndex = state.animation.toIndex;
-        state.animation = null;
-        render();
-        return;
-      }
-
-      render();
-      requestAnimationFrame(tick);
-    }
-
-    requestAnimationFrame(tick);
-  }
-
-  prevBtn.addEventListener('click', () => {
-    if (state.stepIndex <= 0) return;
-    state.stepIndex -= 1;
-    render();
-  });
-
-  nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
-    runStepAnimation(state.stepIndex + 1);
-  });
-
-  resetBtn.addEventListener('click', () => {
-    state.stepIndex = 0;
-    state.animation = null;
-    render();
-  });
-
-  const ro = new ResizeObserver(() => {
-    render();
-  });
-  ro.observe(canvas);
-
-  render();
-
-  createVisualizationAutoplaySkill({
-    enabled: !reduceMotion,
-    stepInterval: 1000,
-    donePause: 1800,
-    isBusy: () => state.animation !== null,
-    isDone: () => state.stepIndex >= snapshots.length - 1,
-    onStep: () => {
-      if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
-      runStepAnimation(state.stepIndex + 1);
-    },
-    onReset: () => {
-      state.stepIndex = 0;
-      state.animation = null;
-      render();
-    },
+  createSnapshotVisualization({
+    canvasId: 'mergeListsCanvas', statusId: 'mergeListsStatus',
+    prevId: 'mergeListsPrev', nextId: 'mergeListsNext', resetId: 'mergeListsReset',
+    buildSnapshots, draw, animationMs: 700,
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Merge sorted array — from the back (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
 function initMergeArrayVisualization() {
-  const canvas = document.getElementById('mergeArrayCanvas');
-  const statusEl = document.getElementById('mergeArrayStatus');
-  const prevBtn = document.getElementById('mergeArrayPrev');
-  const nextBtn = document.getElementById('mergeArrayNext');
-  const resetBtn = document.getElementById('mergeArrayReset');
-
-  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    statusEl.textContent = 'Canvas 2D is not available.';
-    statusEl.classList.add('is-error');
-    return;
-  }
-
-  const reduceMotion = getReducedMotion();
-  const nums1Initial = [1, 2, 3, 0, 0, 0];
+  const nums1Init = [1, 2, 3, 0, 0, 0];
   const m = 3;
   const nums2 = [2, 5, 6];
-  const n = 3;
-
-  const colorLabel = COLOR_LABEL;
-  const colorCurrent = numberToCssHex(COLOR_MEET);
-  const colorCommitted = numberToCssHex(COLOR_TORTOISE);
-  const colorPending = numberToCssHex(COLOR_NODE);
+  const arrN = 3;
 
   function buildSnapshots() {
-    const snapshots = [];
-    const arr = [...nums1Initial];
+    const snaps = [];
+    const arr = [...nums1Init];
     let i = m - 1;
-    let j = n - 1;
-    let k = m + n - 1;
+    let j = arrN - 1;
+    let k = m + arrN - 1;
 
-    snapshots.push({
-      arr: [...arr],
-      i,
-      j,
-      k,
-      writeIndex: null,
+    snaps.push({
+      arr: [...arr], i, j, k, wi: null,
       text: 'Start from the back. Compare nums1[i] and nums2[j], write larger into nums1[k].',
     });
 
     while (i >= 0 && j >= 0) {
-      if (arr[i] > nums2[j]) {
-        const value = arr[i];
-        arr[k] = value;
-        snapshots.push({
-          arr: [...arr],
-          i: i - 1,
-          j,
-          k: k - 1,
-          writeIndex: k,
-          text: `Write ${value} from nums1[${i}] into nums1[${k}].`,
-        });
-        i -= 1;
-      } else {
-        const value = nums2[j];
-        arr[k] = value;
-        snapshots.push({
-          arr: [...arr],
-          i,
-          j: j - 1,
-          k: k - 1,
-          writeIndex: k,
-          text: `Write ${value} from nums2[${j}] into nums1[${k}].`,
-        });
-        j -= 1;
-      }
-      k -= 1;
+      const takeI = arr[i] > nums2[j];
+      const v = takeI ? arr[i] : nums2[j];
+      arr[k] = v;
+      const src = takeI ? `nums1[${i}]` : `nums2[${j}]`;
+      snaps.push({
+        arr: [...arr], i: i - (takeI ? 1 : 0), j: j - (takeI ? 0 : 1), k: k - 1, wi: k,
+        text: `Write ${v} from ${src} into nums1[${k}].`,
+      });
+      if (takeI) i--; else j--;
+      k--;
     }
 
     while (j >= 0) {
-      const value = nums2[j];
-      arr[k] = value;
-      snapshots.push({
-        arr: [...arr],
-        i,
-        j: j - 1,
-        k: k - 1,
-        writeIndex: k,
-        text: `nums1 is exhausted. Copy ${value} from nums2[${j}] into nums1[${k}].`,
+      arr[k] = nums2[j];
+      snaps.push({
+        arr: [...arr], i, j: j - 1, k: k - 1, wi: k,
+        text: `Copy ${nums2[j]} from nums2[${j}] into nums1[${k}].`,
       });
-      j -= 1;
-      k -= 1;
+      j--;
+      k--;
     }
 
-    snapshots.push({
-      arr: [...arr],
-      i,
-      j,
-      k,
-      writeIndex: null,
+    snaps.push({
+      arr: [...arr], i, j, k, wi: null,
       text: `Done. nums1 = [${arr.join(', ')}].`,
     });
-
-    return snapshots;
+    return snaps;
   }
 
-  const snapshots = buildSnapshots();
-  const state = {
-    stepIndex: 0,
-    width: 0,
-    height: 0,
-  };
-
-  function drawArrayRow(label, values, y, options = {}) {
-    const { pointerIndex = null, highlightIndex = null, activeLen = values.length } = options;
-    const marginX = 24;
+  function drawArrayRow(ctx, width, label, values, y, opts) {
+    const { pointer = null, highlight = null, activeLen = values.length } = opts;
+    const mx = 24;
     const gap = 10;
     const slots = values.length;
-    const cellW = Math.max(42, Math.floor((state.width - marginX * 2 - gap * (slots - 1)) / slots));
-    const cellH = 48;
-    const startX = Math.max(14, Math.floor((state.width - (cellW * slots + gap * (slots - 1))) / 2));
+    const cw = Math.max(42, Math.floor((width - mx * 2 - gap * (slots - 1)) / slots));
+    const ch = 48;
+    const sx = Math.max(14, Math.floor((width - (cw * slots + gap * (slots - 1))) / 2));
 
-    ctx.fillStyle = colorLabel;
-    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, 12, y + cellH / 2);
+    ctx.fillText(label, 12, y + ch / 2);
 
     for (let idx = 0; idx < slots; idx++) {
-      const x = startX + idx * (cellW + gap);
-      let stroke = idx < activeLen ? colorCommitted : colorPending;
-      let lineWidth = 2;
-      if (highlightIndex != null && idx === highlightIndex) {
-        stroke = colorCurrent;
-        lineWidth = 3;
-      }
-      if (pointerIndex != null && idx === pointerIndex) {
-        stroke = colorCurrent;
-        lineWidth = 3;
-      }
+      const x = sx + idx * (cw + gap);
+      let stroke = idx < activeLen ? CSS.tortoise : CSS.node;
+      let lw = 2;
+      if (highlight != null && idx === highlight) { stroke = CSS.meet; lw = 3; }
+      if (pointer != null && idx === pointer) { stroke = CSS.meet; lw = 3; }
 
       ctx.beginPath();
-      ctx.roundRect(x, y, cellW, cellH, 10);
+      ctx.roundRect(x, y, cw, ch, 10);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
+      ctx.lineWidth = lw;
       ctx.stroke();
 
-      ctx.fillStyle = colorLabel;
-      ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 16px ${FONT_MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(values[idx]), x + cellW / 2, y + cellH / 2 + 1);
+      ctx.fillText(String(values[idx]), x + cw / 2, y + ch / 2 + 1);
 
-      if (pointerIndex != null && idx === pointerIndex) {
-        ctx.fillStyle = colorCurrent;
-        ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-        ctx.fillText('↑', x + cellW / 2, y - 10);
+      if (pointer != null && idx === pointer) {
+        ctx.fillStyle = CSS.meet;
+        ctx.font = `700 12px ${FONT_SANS}`;
+        ctx.fillText('↑', x + cw / 2, y - 10);
       }
     }
   }
 
-  function draw() {
-    const { width, height } = state;
-    if (width <= 0 || height <= 0) return;
-
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const snapshot = snapshots[state.stepIndex];
+  function draw(ctx, { width, height, snapshot }) {
     const y1 = 38;
-    const y2 = y1 + 48 + 42;
+    const y2 = y1 + 90;
 
-    drawArrayRow('nums1', snapshot.arr, y1, {
-      pointerIndex: snapshot.k >= 0 ? snapshot.k : null,
-      highlightIndex: snapshot.writeIndex,
+    drawArrayRow(ctx, width, 'nums1', snapshot.arr, y1, {
+      pointer: snapshot.k >= 0 ? snapshot.k : null,
+      highlight: snapshot.wi,
       activeLen: snapshot.k + 1,
     });
-    drawArrayRow('nums2', nums2, y2, {
-      pointerIndex: snapshot.j >= 0 ? snapshot.j : null,
+    drawArrayRow(ctx, width, 'nums2', nums2, y2, {
+      pointer: snapshot.j >= 0 ? snapshot.j : null,
       activeLen: nums2.length,
     });
 
-    ctx.fillStyle = colorLabel;
-    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`i = ${Math.max(snapshot.i, -1)}, j = ${Math.max(snapshot.j, -1)}, k = ${Math.max(snapshot.k, -1)}`, 16, height - 16);
+    ctx.fillText(
+      `i = ${Math.max(snapshot.i, -1)}, j = ${Math.max(snapshot.j, -1)}, k = ${Math.max(snapshot.k, -1)}`,
+      16, height - 16,
+    );
   }
 
-  function render() {
-    const { width, height } = resize2dCanvas(canvas);
-    state.width = width;
-    state.height = height;
-    draw();
-    statusEl.textContent = snapshots[state.stepIndex].text;
-    prevBtn.disabled = state.stepIndex <= 0;
-    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
-  }
-
-  prevBtn.addEventListener('click', () => {
-    if (state.stepIndex <= 0) return;
-    state.stepIndex -= 1;
-    render();
-  });
-
-  nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1) return;
-    state.stepIndex += 1;
-    render();
-  });
-
-  resetBtn.addEventListener('click', () => {
-    state.stepIndex = 0;
-    render();
-  });
-
-  const ro = new ResizeObserver(() => {
-    render();
-  });
-  ro.observe(canvas);
-
-  render();
-
-  createVisualizationAutoplaySkill({
-    enabled: !reduceMotion,
-    stepInterval: 1000,
-    donePause: 1800,
-    isDone: () => state.stepIndex >= snapshots.length - 1,
-    onStep: () => {
-      if (state.stepIndex >= snapshots.length - 1) return;
-      state.stepIndex += 1;
-      render();
-    },
-    onReset: () => {
-      state.stepIndex = 0;
-      render();
-    },
+  createSnapshotVisualization({
+    canvasId: 'mergeArrayCanvas', statusId: 'mergeArrayStatus',
+    prevId: 'mergeArrayPrev', nextId: 'mergeArrayNext', resetId: 'mergeArrayReset',
+    buildSnapshots, draw, animationMs: 600,
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Square root — binary search (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
 function initSqrtBinarySearchVisualization() {
-  const canvas = document.getElementById('sqrtCanvas');
-  const statusEl = document.getElementById('sqrtStatus');
-  const prevBtn = document.getElementById('sqrtPrev');
-  const nextBtn = document.getElementById('sqrtNext');
-  const resetBtn = document.getElementById('sqrtReset');
-
-  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    statusEl.textContent = 'Canvas 2D is not available.';
-    statusEl.classList.add('is-error');
-    return;
-  }
-
-  const reduceMotion = getReducedMotion();
   const x = 26;
-  const initialHi = Math.floor(x / 2) + 1;
-
-  const colorLabel = COLOR_LABEL;
-  const colorCurrent = numberToCssHex(COLOR_MEET);
-  const colorLo = numberToCssHex(COLOR_TORTOISE);
-  const colorHi = numberToCssHex(COLOR_HARE);
-  const colorPending = numberToCssHex(COLOR_NODE);
+  const hiInit = Math.floor(x / 2) + 1;
 
   function buildSnapshots() {
-    const snapshots = [];
+    const snaps = [];
     let lo = 0;
-    let hi = initialHi;
+    let hi = hiInit;
     let ans = 0;
 
-    snapshots.push({
-      lo,
-      hi,
-      mid: null,
-      ans,
-      text: `Search in [${lo}, ${hi}] for floor sqrt of ${x}.`,
-    });
+    snaps.push({ lo, hi, mid: null, ans, text: `Search in [${lo}, ${hi}] for floor sqrt of ${x}.` });
 
     while (lo <= hi) {
       const mid = Math.floor((lo + hi) / 2);
-      const square = mid * mid;
+      const sq = mid * mid;
 
-      snapshots.push({
-        lo,
-        hi,
-        mid,
-        ans,
-        text: `Check mid=${mid}: ${mid}² = ${square}.`,
-      });
+      snaps.push({ lo, hi, mid, ans, text: `Check mid=${mid}: ${mid}² = ${sq}.` });
 
-      if (square === x) {
+      if (sq === x) {
         ans = mid;
-        snapshots.push({
-          lo,
-          hi,
-          mid,
-          ans,
-          text: `Exact match at mid=${mid}. Answer is ${mid}.`,
-        });
+        snaps.push({ lo, hi, mid, ans, text: `Exact match at mid=${mid}. Answer is ${mid}.` });
         break;
       }
 
-      if (square < x) {
+      if (sq < x) {
         ans = mid;
         lo = mid + 1;
-        snapshots.push({
-          lo,
-          hi,
-          mid,
-          ans,
-          text: `${square} < ${x}. Move lo to ${lo}; best so far is ${ans}.`,
-        });
+        snaps.push({ lo, hi, mid, ans, text: `${sq} < ${x}. Move lo to ${lo}; best so far is ${ans}.` });
       } else {
         hi = mid - 1;
-        snapshots.push({
-          lo,
-          hi,
-          mid,
-          ans,
-          text: `${square} > ${x}. Move hi to ${hi}.`,
-        });
+        snaps.push({ lo, hi, mid, ans, text: `${sq} > ${x}. Move hi to ${hi}.` });
       }
     }
 
-    const last = snapshots[snapshots.length - 1];
-    if (last.mid == null || !last.text.includes('Exact match')) {
-      snapshots.push({
-        lo,
-        hi,
-        mid: null,
-        ans,
-        text: `Done. ⌊√${x}⌋ = ${ans}.`,
-      });
+    const last = snaps[snaps.length - 1];
+    if (!last.text.includes('Exact match')) {
+      snaps.push({ lo, hi, mid: null, ans, text: `Done. ⌊√${x}⌋ = ${ans}.` });
     }
-
-    return snapshots;
+    return snaps;
   }
 
-  const snapshots = buildSnapshots();
-  const state = {
-    stepIndex: 0,
-    width: 0,
-    height: 0,
-    animation: null,
-  };
-
-  const SQRT_ANIMATION_MS = 620;
-
-  function getCellCenter(startX, cellW, gap, value, y, cellH) {
-    return {
-      x: startX + value * (cellW + gap) + cellW / 2,
-      y: y + cellH / 2,
-    };
-  }
-
-  function drawMarker(label, color, value, startX, cellW, gap, y, cellH, offsetY = -26, alpha = 1) {
-    if (value == null || value < 0 || value > initialHi) return;
-    const center = getCellCenter(startX, cellW, gap, value, y, cellH);
+  function drawMarker(ctx, label, color, value, sx, cw, gap, y, ch, offY, alpha) {
+    if (value == null || value < 0 || value > hiInit) return;
+    const cx = sx + value * (cw + gap) + cw / 2;
+    const cy = y + ch / 2;
 
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(center.x, center.y - cellH / 2 - 3);
-    ctx.lineTo(center.x, center.y + offsetY + 8);
+    ctx.moveTo(cx, cy - ch / 2 - 3);
+    ctx.lineTo(cx, cy + offY + 8);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(center.x, center.y + offsetY, 12, 0, Math.PI * 2);
+    ctx.arc(cx, cy + offY, 12, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff';
     ctx.fill();
     ctx.strokeStyle = color;
@@ -1992,194 +1462,81 @@ function initSqrtBinarySearchVisualization() {
     ctx.stroke();
 
     ctx.fillStyle = color;
-    ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.font = `700 11px ${FONT_SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, center.x, center.y + offsetY + 1);
+    ctx.fillText(label, cx, cy + offY + 1);
     ctx.globalAlpha = 1;
   }
 
-  function draw() {
-    const { width, height } = state;
-    if (width <= 0 || height <= 0) return;
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    const vLo = isAnimating ? lerp(snapshot.lo, toSnapshot.lo, progress) : snapshot.lo;
+    const vHi = isAnimating ? lerp(snapshot.hi, toSnapshot.hi, progress) : snapshot.hi;
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-
-    const snapshot = snapshots[state.stepIndex];
-    const toSnapshot = state.animation ? snapshots[state.animation.toIndex] : snapshot;
-    const t = state.animation ? easeInOutCubic(state.animation.progress) : 1;
-
-    const viewLo = state.animation
-      ? lerp(snapshot.lo, toSnapshot.lo, t)
-      : snapshot.lo;
-    const viewHi = state.animation
-      ? lerp(snapshot.hi, toSnapshot.hi, t)
-      : snapshot.hi;
-
-    const midFrom = snapshot.mid;
-    const midTo = toSnapshot.mid;
-    let viewMid = midTo;
+    let vMid = isAnimating ? toSnapshot.mid : snapshot.mid;
     let midAlpha = 1;
-    if (state.animation) {
-      if (midFrom == null && midTo != null) {
-        viewMid = midTo;
-        midAlpha = t;
-      } else if (midFrom != null && midTo == null) {
-        viewMid = midFrom;
-        midAlpha = 1 - t;
-      } else if (midFrom != null && midTo != null) {
-        viewMid = lerp(midFrom, midTo, t);
-      }
+    if (isAnimating) {
+      if (snapshot.mid == null && toSnapshot.mid != null) { vMid = toSnapshot.mid; midAlpha = progress; }
+      else if (snapshot.mid != null && toSnapshot.mid == null) { vMid = snapshot.mid; midAlpha = 1 - progress; }
+      else if (snapshot.mid != null && toSnapshot.mid != null) { vMid = lerp(snapshot.mid, toSnapshot.mid, progress); }
     }
 
-    const rangeMax = initialHi;
-    const marginX = 24;
+    const slots = hiInit + 1;
+    const mx = 24;
     const gap = 8;
-    const slots = rangeMax + 1;
-    const cellW = Math.max(24, Math.floor((width - marginX * 2 - gap * (slots - 1)) / slots));
-    const cellH = 44;
-    const rowW = cellW * slots + gap * (slots - 1);
-    const startX = Math.max(14, Math.floor((width - rowW) / 2));
+    const cw = Math.max(24, Math.floor((width - mx * 2 - gap * (slots - 1)) / slots));
+    const ch = 44;
+    const rw = cw * slots + gap * (slots - 1);
+    const sx = Math.max(14, Math.floor((width - rw) / 2));
     const y = Math.max(72, Math.floor(height * 0.38));
 
-    ctx.fillStyle = colorLabel;
-    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    const ansVal = isAnimating ? Math.round(lerp(snapshot.ans, toSnapshot.ans, progress)) : snapshot.ans;
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const ansValue = state.animation
-      ? Math.round(lerp(snapshot.ans, toSnapshot.ans, t))
-      : snapshot.ans;
     ctx.fillText(`x = ${x}`, 16, 20);
-    ctx.fillText(`best = ${ansValue}`, 16, 40);
+    ctx.fillText(`best = ${ansVal}`, 16, 40);
 
-    for (let value = 0; value <= rangeMax; value++) {
-      const xPos = startX + value * (cellW + gap);
-      let stroke = colorPending;
-      let lineWidth = 2;
+    for (let v = 0; v <= hiInit; v++) {
+      const xp = sx + v * (cw + gap);
+      let stroke = CSS.node;
+      let lw = 2;
 
-      if (value >= Math.ceil(viewLo) && value <= Math.floor(viewHi)) {
-        stroke = numberToCssHex(COLOR_EDGE);
-      }
-      if (Math.abs(value - viewLo) < 0.5) {
-        stroke = colorLo;
-        lineWidth = 3;
-      }
-      if (Math.abs(value - viewHi) < 0.5) {
-        stroke = colorHi;
-        lineWidth = 3;
-      }
-      if (viewMid != null && Math.abs(value - viewMid) < 0.5) {
-        stroke = colorCurrent;
-        lineWidth = 4;
-      }
+      if (v >= Math.ceil(vLo) && v <= Math.floor(vHi)) stroke = CSS.edge;
+      if (Math.abs(v - vLo) < 0.5) { stroke = CSS.tortoise; lw = 3; }
+      if (Math.abs(v - vHi) < 0.5) { stroke = CSS.hare; lw = 3; }
+      if (vMid != null && Math.abs(v - vMid) < 0.5) { stroke = CSS.meet; lw = 4; }
 
       ctx.beginPath();
-      ctx.roundRect(xPos, y, cellW, cellH, 8);
+      ctx.roundRect(xp, y, cw, ch, 8);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
+      ctx.lineWidth = lw;
       ctx.stroke();
 
-      ctx.fillStyle = colorLabel;
-      ctx.font = '700 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 13px ${FONT_MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(value), xPos + cellW / 2, y + cellH / 2 + 1);
+      ctx.fillText(String(v), xp + cw / 2, y + ch / 2 + 1);
     }
 
-    drawMarker('lo', colorLo, viewLo, startX, cellW, gap, y, cellH, -28, 1);
-    drawMarker('hi', colorHi, viewHi, startX, cellW, gap, y, cellH, -52, 1);
-    drawMarker('mid', colorCurrent, viewMid, startX, cellW, gap, y, cellH, 56, midAlpha);
+    drawMarker(ctx, 'lo', CSS.tortoise, vLo, sx, cw, gap, y, ch, -28, 1);
+    drawMarker(ctx, 'hi', CSS.hare, vHi, sx, cw, gap, y, ch, -52, 1);
+    drawMarker(ctx, 'mid', CSS.meet, vMid, sx, cw, gap, y, ch, 56, midAlpha);
   }
 
-  function render() {
-    const { width, height } = resize2dCanvas(canvas);
-    state.width = width;
-    state.height = height;
-    draw();
-    statusEl.textContent = state.animation
-      ? snapshots[state.animation.toIndex].text
-      : snapshots[state.stepIndex].text;
-    prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
-    nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
-  }
-
-  function runStepAnimation(targetIndex) {
-    if (state.animation || targetIndex <= state.stepIndex || reduceMotion) {
-      state.stepIndex = targetIndex;
-      render();
-      return;
-    }
-
-    state.animation = {
-      toIndex: targetIndex,
-      startTs: performance.now(),
-      progress: 0,
-    };
-
-    function tick(ts) {
-      if (!state.animation) return;
-      const elapsed = ts - state.animation.startTs;
-      state.animation.progress = clamp01(elapsed / SQRT_ANIMATION_MS);
-
-      if (state.animation.progress >= 1) {
-        state.stepIndex = state.animation.toIndex;
-        state.animation = null;
-        render();
-        return;
-      }
-
-      render();
-      requestAnimationFrame(tick);
-    }
-
-    requestAnimationFrame(tick);
-  }
-
-  prevBtn.addEventListener('click', () => {
-    if (state.stepIndex <= 0) return;
-    state.stepIndex -= 1;
-    render();
-  });
-
-  nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
-    runStepAnimation(state.stepIndex + 1);
-  });
-
-  resetBtn.addEventListener('click', () => {
-    state.stepIndex = 0;
-    state.animation = null;
-    render();
-  });
-
-  const ro = new ResizeObserver(() => {
-    render();
-  });
-  ro.observe(canvas);
-
-  render();
-
-  createVisualizationAutoplaySkill({
-    enabled: !reduceMotion,
-    stepInterval: 1000,
-    donePause: 1800,
-    isBusy: () => state.animation !== null,
-    isDone: () => state.stepIndex >= snapshots.length - 1,
-    onStep: () => {
-      if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
-      runStepAnimation(state.stepIndex + 1);
-    },
-    onReset: () => {
-      state.stepIndex = 0;
-      state.animation = null;
-      render();
-    },
+  createSnapshotVisualization({
+    canvasId: 'sqrtCanvas', statusId: 'sqrtStatus',
+    prevId: 'sqrtPrev', nextId: 'sqrtNext', resetId: 'sqrtReset',
+    buildSnapshots, draw, animationMs: 620,
   });
 }
+
+/* ───── Bootstrap ────────────────────────────────────────────────── */
 
 function init() {
   initFloydVisualization();
