@@ -257,6 +257,37 @@
 
         <div id="sqrtStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
+
+      <header class="page-header">
+        <h2>Majority element (Boyer-Moore voting)</h2>
+        <p class="muted">
+          Step through voting on a <strong>randomized list</strong>. Each reset/autoplay cycle
+          generates a new array with a guaranteed majority element.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Majority element visualization">
+        <canvas
+          id="majorityCanvas"
+          class="viz-canvas viz-canvas-algo"
+          role="img"
+          aria-label="Majority element Boyer-Moore voting visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="Majority element controls">
+          <button id="majorityPrev" type="button" class="btn">Prev</button>
+          <button id="majorityNext" type="button" class="btn btn-primary">Next</button>
+          <button id="majorityReset" type="button" class="btn">Reset (new random list)</button>
+        </div>
+
+        <div
+          id="majorityStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
     </main>
 
     <footer class="site-footer">
