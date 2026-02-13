@@ -288,6 +288,38 @@
           aria-atomic="true"
         ></div>
       </section>
+
+      <header class="page-header">
+        <h2>Excel column title to number (base-26)</h2>
+        <p class="muted">
+          Convert titles like <strong>"AB"</strong> using
+          <strong>result = result * 26 + value</strong>, with shift-left animation.
+          Each reset/autoplay cycle randomizes a new title.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Excel column title to number visualization">
+        <canvas
+          id="excelColCanvas"
+          class="viz-canvas viz-canvas-algo"
+          role="img"
+          aria-label="Excel column title to number base-26 visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="Excel column controls">
+          <button id="excelColPrev" type="button" class="btn">Prev</button>
+          <button id="excelColNext" type="button" class="btn btn-primary">Next</button>
+          <button id="excelColReset" type="button" class="btn">Reset (new random title)</button>
+        </div>
+
+        <div
+          id="excelColStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
     </main>
 
     <footer class="site-footer">

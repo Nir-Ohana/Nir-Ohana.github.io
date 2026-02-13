@@ -1713,6 +1713,220 @@ function initMajorityElementVisualization() {
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Excel column title → number (base-26, shift-left logic)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function initExcelTitleNumberVisualization() {
+  function randomTitle() {
+    const len = getRandomIntInclusive(2, 5);
+    let out = '';
+    for (let i = 0; i < len; i++) {
+      out += String.fromCharCode(65 + getRandomIntInclusive(0, 25));
+    }
+    return out;
+  }
+
+  function charValue(ch) {
+    return ch.charCodeAt(0) - 64;
+  }
+
+  function buildSnapshots() {
+    const title = randomTitle();
+    const chars = title.split('');
+    const snaps = [];
+    let result = 0;
+
+    snaps.push({
+      title,
+      chars,
+      idx: null,
+      result,
+      prevResult: null,
+      value: null,
+      text: `New run: columnTitle="${title}". Start with result = 0.`,
+    });
+
+    for (let i = 0; i < chars.length; i++) {
+      const value = charValue(chars[i]);
+      const prevResult = result;
+      result = prevResult * 26 + value;
+      snaps.push({
+        title,
+        chars,
+        idx: i,
+        result,
+        prevResult,
+        value,
+        text: `i=${i}, char='${chars[i]}' (${value}): result = ${prevResult} * 26 + ${value} = ${result}.`,
+      });
+    }
+
+    snaps.push({
+      title,
+      chars,
+      idx: null,
+      result,
+      prevResult: null,
+      value: null,
+      text: `Done. "${title}" → ${result}. Next reset/autoplay cycle randomizes a new title.`,
+    });
+
+    return snaps;
+  }
+
+  function drawValueBox(ctx, x, y, w, h, text, stroke, lineWidth = 2, alpha = 1) {
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 10);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 16px ${FONT_MONO}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(text), x + w / 2, y + h / 2 + 1);
+    ctx.globalAlpha = 1;
+  }
+
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    const active = isAnimating ? toSnapshot : snapshot;
+    const chars = active.chars;
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`columnTitle = "${active.title}"`, 16, 20);
+
+    const shownResult = isAnimating && toSnapshot.prevResult != null && progress < 0.86
+      ? toSnapshot.prevResult
+      : active.result;
+    ctx.fillText(`result = ${shownResult}`, 16, 40);
+
+    const slots = chars.length;
+    const gap = 10;
+    const cw = Math.max(42, Math.min(58, Math.floor((width - 80 - gap * (slots - 1)) / Math.max(1, slots))));
+    const ch = 46;
+    const total = cw * slots + gap * (slots - 1);
+    const sx = Math.max(20, Math.floor((width - total) / 2));
+    const sy = 62;
+
+    for (let i = 0; i < slots; i++) {
+      const x = sx + i * (cw + gap);
+      let stroke = CSS.node;
+      let lw = 2;
+      if (active.idx != null && i < active.idx) stroke = CSS.tortoise;
+      if (active.idx != null && i === active.idx) {
+        stroke = CSS.meet;
+        lw = 3;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, sy, cw, ch, 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 16px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(chars[i], x + cw / 2, sy + ch / 2 + 1);
+    }
+
+    const boxW = Math.max(88, Math.min(130, Math.floor(width * 0.18)));
+    const boxH = 50;
+    const y = Math.max(138, Math.floor(height * 0.48));
+    const xPrev = Math.floor(width * 0.16);
+    const xShift = Math.floor(width * 0.42);
+    const xFinal = Math.floor(width * 0.70);
+    const current = active.idx != null ? active.idx : null;
+
+    if (isAnimating && toSnapshot.idx != null && toSnapshot.prevResult != null) {
+      const p = easeInOutCubic(progress);
+      const phaseOne = Math.min(1, p * 2);
+      const phaseTwo = Math.max(0, Math.min(1, (p - 0.5) * 2));
+
+      drawValueBox(ctx, xPrev, y, boxW, boxH, toSnapshot.prevResult, CSS.node, 2, 1 - phaseOne * 0.35);
+
+      const moveX = lerp(xPrev, xShift, phaseOne);
+      drawValueBox(ctx, moveX, y, boxW, boxH, toSnapshot.prevResult, CSS.tortoise, 3);
+
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 14px ${FONT_SANS}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('× 26 (shift left)', xShift + boxW + 82, y + boxH / 2);
+
+      drawValueBox(ctx, xFinal, y, boxW, boxH, toSnapshot.result, CSS.meet, 3, phaseTwo);
+
+      if (current != null) {
+        const valStartX = sx + current * (cw + gap) + cw / 2;
+        const valStartY = sy + ch + 24;
+        const valEndX = xFinal - 24;
+        const valEndY = y + boxH / 2;
+        const bx = lerp(valStartX, valEndX, phaseTwo);
+        const by = lerp(valStartY, valEndY, phaseTwo);
+
+        ctx.globalAlpha = phaseTwo;
+        ctx.beginPath();
+        ctx.arc(bx, by, 13, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = CSS.hare;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.fillStyle = CSS.hare;
+        ctx.font = `700 12px ${FONT_MONO}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(toSnapshot.value), bx, by + 1);
+        ctx.globalAlpha = 1;
+      }
+    } else if (active.idx != null && active.prevResult != null) {
+      drawValueBox(ctx, xPrev, y, boxW, boxH, active.prevResult, CSS.node);
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 14px ${FONT_SANS}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('× 26 (shift left)', xShift + boxW / 2, y + boxH / 2);
+      drawValueBox(ctx, xFinal, y, boxW, boxH, active.result, CSS.meet, 3);
+
+      const plusX = xFinal - 24;
+      const plusY = y + boxH / 2;
+      ctx.beginPath();
+      ctx.arc(plusX, plusY, 13, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = CSS.hare;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.fillStyle = CSS.hare;
+      ctx.font = `700 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(active.value), plusX, plusY + 1);
+    } else {
+      drawValueBox(ctx, xFinal, y, boxW, boxH, active.result, CSS.meet, 3);
+    }
+  }
+
+  createSnapshotVisualization({
+    canvasId: 'excelColCanvas', statusId: 'excelColStatus',
+    prevId: 'excelColPrev', nextId: 'excelColNext', resetId: 'excelColReset',
+    buildSnapshots,
+    draw,
+    animationMs: 760,
+    rebuildSnapshotsOnReset: true,
+  });
+}
+
 /* ───── Bootstrap ────────────────────────────────────────────────── */
 
 function init() {
@@ -1724,6 +1938,7 @@ function init() {
   initMergeArrayVisualization();
   initSqrtBinarySearchVisualization();
   initMajorityElementVisualization();
+  initExcelTitleNumberVisualization();
 }
 
 init();
