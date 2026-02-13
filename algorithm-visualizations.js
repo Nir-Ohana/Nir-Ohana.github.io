@@ -1795,6 +1795,7 @@ function initExcelTitleNumberVisualization() {
   function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
     const active = isAnimating ? toSnapshot : snapshot;
     const chars = active.chars;
+    const current = active.idx != null ? active.idx : null;
 
     ctx.fillStyle = CSS.label;
     ctx.font = `600 13px ${FONT_SANS}`;
@@ -1802,9 +1803,15 @@ function initExcelTitleNumberVisualization() {
     ctx.textBaseline = 'middle';
     ctx.fillText(`columnTitle = "${active.title}"`, 16, 20);
 
-    const shownResult = isAnimating && toSnapshot.prevResult != null && progress < 0.86
-      ? toSnapshot.prevResult
-      : active.result;
+    let shownResult = active.result;
+    if (isAnimating && toSnapshot.idx != null && toSnapshot.prevResult != null) {
+      const shifted = toSnapshot.prevResult * 26;
+      const shiftT = easeInOutCubic(clamp01(progress / 0.56));
+      const addT = easeInOutCubic(clamp01((progress - 0.44) / 0.56));
+      const duringShift = Math.round(lerp(toSnapshot.prevResult, shifted, shiftT));
+      const duringAdd = Math.round(lerp(shifted, toSnapshot.result, addT));
+      shownResult = progress < 0.56 ? duringShift : duringAdd;
+    }
     ctx.fillText(`result = ${shownResult}`, 16, 40);
 
     const slots = chars.length;
@@ -1838,43 +1845,60 @@ function initExcelTitleNumberVisualization() {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(chars[i], x + cw / 2, sy + ch / 2 + 1);
+
+      ctx.font = `600 10px ${FONT_SANS}`;
+      ctx.fillText(String(i), x + cw / 2, sy + ch + 12);
     }
 
     const boxW = Math.max(88, Math.min(130, Math.floor(width * 0.18)));
     const boxH = 50;
     const y = Math.max(138, Math.floor(height * 0.48));
-    const xPrev = Math.floor(width * 0.16);
+    const xPrev = Math.floor(width * 0.14);
     const xShift = Math.floor(width * 0.42);
-    const xFinal = Math.floor(width * 0.70);
-    const current = active.idx != null ? active.idx : null;
+    const xFinal = Math.floor(width * 0.72);
 
-    if (isAnimating && toSnapshot.idx != null && toSnapshot.prevResult != null) {
-      const p = easeInOutCubic(progress);
-      const phaseOne = Math.min(1, p * 2);
-      const phaseTwo = Math.max(0, Math.min(1, (p - 0.5) * 2));
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 11px ${FONT_SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('prev', xPrev + boxW / 2, y - 16);
+    ctx.fillText('prev × 26', xShift + boxW / 2, y - 16);
+    ctx.fillText('new result', xFinal + boxW / 2, y - 16);
 
-      drawValueBox(ctx, xPrev, y, boxW, boxH, toSnapshot.prevResult, CSS.node, 2, 1 - phaseOne * 0.35);
-
-      const moveX = lerp(xPrev, xShift, phaseOne);
-      drawValueBox(ctx, moveX, y, boxW, boxH, toSnapshot.prevResult, CSS.tortoise, 3);
-
+    function drawOperatorText(op, x) {
       ctx.fillStyle = CSS.label;
-      ctx.font = `700 14px ${FONT_SANS}`;
+      ctx.font = `700 16px ${FONT_SANS}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('× 26 (shift left)', xShift + boxW + 82, y + boxH / 2);
+      ctx.fillText(op, x, y + boxH / 2);
+    }
 
-      drawValueBox(ctx, xFinal, y, boxW, boxH, toSnapshot.result, CSS.meet, 3, phaseTwo);
+    if (isAnimating && toSnapshot.idx != null && toSnapshot.prevResult != null) {
+      const shifted = toSnapshot.prevResult * 26;
+      const shiftT = easeInOutCubic(clamp01(progress / 0.58));
+      const addT = easeInOutCubic(clamp01((progress - 0.42) / 0.58));
+
+      drawValueBox(ctx, xPrev, y, boxW, boxH, toSnapshot.prevResult, CSS.node);
+
+      const ghostX = lerp(xPrev, xShift, shiftT);
+      drawValueBox(ctx, ghostX, y, boxW, boxH, shifted, CSS.tortoise, 3, 0.35 + 0.65 * shiftT);
+      drawValueBox(ctx, xShift, y, boxW, boxH, shifted, CSS.tortoise, 3, shiftT);
+
+      drawOperatorText('→', xPrev + boxW + 22);
+      drawOperatorText('+', xShift + boxW + 18);
+
+      const animatedResult = Math.round(lerp(shifted, toSnapshot.result, addT));
+      drawValueBox(ctx, xFinal, y, boxW, boxH, animatedResult, CSS.meet, 3, shiftT * 0.6 + addT * 0.4);
 
       if (current != null) {
         const valStartX = sx + current * (cw + gap) + cw / 2;
         const valStartY = sy + ch + 24;
-        const valEndX = xFinal - 24;
+        const valEndX = xShift + boxW + 46;
         const valEndY = y + boxH / 2;
-        const bx = lerp(valStartX, valEndX, phaseTwo);
-        const by = lerp(valStartY, valEndY, phaseTwo);
+        const bx = lerp(valStartX, valEndX, addT);
+        const by = lerp(valStartY, valEndY, addT);
 
-        ctx.globalAlpha = phaseTwo;
+        ctx.globalAlpha = addT;
         ctx.beginPath();
         ctx.arc(bx, by, 13, 0, Math.PI * 2);
         ctx.fillStyle = '#ffffff';
@@ -1890,15 +1914,14 @@ function initExcelTitleNumberVisualization() {
         ctx.globalAlpha = 1;
       }
     } else if (active.idx != null && active.prevResult != null) {
+      const shifted = active.prevResult * 26;
       drawValueBox(ctx, xPrev, y, boxW, boxH, active.prevResult, CSS.node);
-      ctx.fillStyle = CSS.label;
-      ctx.font = `700 14px ${FONT_SANS}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('× 26 (shift left)', xShift + boxW / 2, y + boxH / 2);
+      drawValueBox(ctx, xShift, y, boxW, boxH, shifted, CSS.tortoise, 3);
       drawValueBox(ctx, xFinal, y, boxW, boxH, active.result, CSS.meet, 3);
+      drawOperatorText('→', xPrev + boxW + 22);
+      drawOperatorText('+', xShift + boxW + 18);
 
-      const plusX = xFinal - 24;
+      const plusX = xShift + boxW + 46;
       const plusY = y + boxH / 2;
       ctx.beginPath();
       ctx.arc(plusX, plusY, 13, 0, Math.PI * 2);
@@ -1922,7 +1945,7 @@ function initExcelTitleNumberVisualization() {
     prevId: 'excelColPrev', nextId: 'excelColNext', resetId: 'excelColReset',
     buildSnapshots,
     draw,
-    animationMs: 760,
+    animationMs: 980,
     rebuildSnapshotsOnReset: true,
   });
 }
