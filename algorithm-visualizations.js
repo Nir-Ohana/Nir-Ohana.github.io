@@ -958,10 +958,893 @@ function initHashTableVisualization() {
   });
 }
 
+function initFibonacciVisualization() {
+  const canvas = document.getElementById('fibCanvas');
+  const statusEl = document.getElementById('fibStatus');
+  const prevBtn = document.getElementById('fibPrev');
+  const nextBtn = document.getElementById('fibNext');
+  const resetBtn = document.getElementById('fibReset');
+
+  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    statusEl.textContent = 'Canvas 2D is not available.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  const reduceMotion = getReducedMotion();
+  const n = 10;
+  const colorEdge = numberToCssHex(COLOR_EDGE);
+  const colorLabel = COLOR_LABEL;
+  const colorCurrent = numberToCssHex(COLOR_MEET);
+  const colorComputed = numberToCssHex(COLOR_TORTOISE);
+  const colorPending = numberToCssHex(COLOR_NODE);
+
+  function buildSnapshots() {
+    const dp = Array(n + 1).fill(null);
+    dp[0] = 0;
+    dp[1] = 1;
+
+    const snapshots = [
+      {
+        dp: [...dp],
+        current: null,
+        text: 'Base cases: F(0)=0, F(1)=1. Ready to compute from i=2.',
+      },
+    ];
+
+    for (let i = 2; i <= n; i++) {
+      dp[i] = dp[i - 1] + dp[i - 2];
+      snapshots.push({
+        dp: [...dp],
+        current: i,
+        text: `i=${i}: F(${i}) = F(${i - 1}) + F(${i - 2}) = ${dp[i - 1]} + ${dp[i - 2]} = ${dp[i]}`,
+      });
+    }
+
+    snapshots.push({
+      dp: [...dp],
+      current: null,
+      text: `Done. F(${n}) = ${dp[n]}.`,
+    });
+
+    return snapshots;
+  }
+
+  const snapshots = buildSnapshots();
+  const state = {
+    stepIndex: 0,
+    width: 0,
+    height: 0,
+  };
+
+  function draw() {
+    const { width, height } = state;
+    if (width <= 0 || height <= 0) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const snapshot = snapshots[state.stepIndex];
+    const marginX = 16;
+    const gap = 8;
+    const cellW = Math.max(40, Math.floor((width - marginX * 2 - n * gap) / (n + 1)));
+    const cellH = Math.max(56, Math.min(76, Math.floor(height * 0.36)));
+    const usedW = cellW * (n + 1) + gap * n;
+    const startX = Math.max(12, Math.floor((width - usedW) / 2));
+    const y = Math.max(40, Math.floor((height - cellH) / 2));
+
+    ctx.fillStyle = colorLabel;
+    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`n = ${n}`, 16, 20);
+
+    for (let i = 0; i <= n; i++) {
+      const x = startX + i * (cellW + gap);
+      const value = snapshot.dp[i];
+
+      let stroke = colorPending;
+      let lineWidth = 2;
+      if (value != null) {
+        stroke = colorComputed;
+      }
+      if (snapshot.current === i) {
+        stroke = colorCurrent;
+        lineWidth = 3;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, y, cellW, cellH, 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+
+      ctx.fillStyle = colorLabel;
+      ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`i=${i}`, x + cellW / 2, y + 14);
+
+      ctx.font = '700 17px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.fillText(value == null ? '-' : String(value), x + cellW / 2, y + cellH / 2 + 8);
+    }
+  }
+
+  function setStatus() {
+    statusEl.textContent = snapshots[state.stepIndex].text;
+  }
+
+  function render() {
+    const { width, height } = resize2dCanvas(canvas);
+    state.width = width;
+    state.height = height;
+    draw();
+    setStatus();
+    prevBtn.disabled = state.stepIndex <= 0;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
+  }
+
+  prevBtn.addEventListener('click', () => {
+    if (state.stepIndex <= 0) return;
+    state.stepIndex -= 1;
+    render();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (state.stepIndex >= snapshots.length - 1) return;
+    state.stepIndex += 1;
+    render();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    state.stepIndex = 0;
+    render();
+  });
+
+  const ro = new ResizeObserver(() => {
+    render();
+  });
+  ro.observe(canvas);
+
+  render();
+
+  createVisualizationAutoplaySkill({
+    enabled: !reduceMotion,
+    stepInterval: 1000,
+    donePause: 1800,
+    isDone: () => state.stepIndex >= snapshots.length - 1,
+    onStep: () => {
+      if (state.stepIndex >= snapshots.length - 1) return;
+      state.stepIndex += 1;
+      render();
+    },
+    onReset: () => {
+      state.stepIndex = 0;
+      render();
+    },
+  });
+}
+
+function initMergeListsVisualization() {
+  const canvas = document.getElementById('mergeListsCanvas');
+  const statusEl = document.getElementById('mergeListsStatus');
+  const prevBtn = document.getElementById('mergeListsPrev');
+  const nextBtn = document.getElementById('mergeListsNext');
+  const resetBtn = document.getElementById('mergeListsReset');
+
+  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    statusEl.textContent = 'Canvas 2D is not available.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  const reduceMotion = getReducedMotion();
+  const list1 = [1, 2, 4];
+  const list2 = [1, 3, 4];
+
+  const colorEdge = numberToCssHex(COLOR_EDGE);
+  const colorLabel = COLOR_LABEL;
+  const colorCurrent = numberToCssHex(COLOR_MEET);
+  const colorConsumed = numberToCssHex(COLOR_TORTOISE);
+  const colorPending = numberToCssHex(COLOR_NODE);
+
+  function buildSnapshots() {
+    const snapshots = [];
+    let p1 = 0;
+    let p2 = 0;
+    const merged = [];
+
+    snapshots.push({
+      p1,
+      p2,
+      merged: [...merged],
+      text: 'Start merge. Compare list1[p1] and list2[p2], take the smaller value.',
+      picked: null,
+    });
+
+    while (p1 < list1.length && p2 < list2.length) {
+      const takeLeft = list1[p1] <= list2[p2];
+      const value = takeLeft ? list1[p1] : list2[p2];
+      merged.push(value);
+      if (takeLeft) p1 += 1;
+      else p2 += 1;
+
+      snapshots.push({
+        p1,
+        p2,
+        merged: [...merged],
+        text: takeLeft
+          ? `Take ${value} from list1 (stable on ties).`
+          : `Take ${value} from list2.`,
+        picked: value,
+      });
+    }
+
+    while (p1 < list1.length) {
+      const value = list1[p1];
+      merged.push(value);
+      p1 += 1;
+      snapshots.push({
+        p1,
+        p2,
+        merged: [...merged],
+        text: `List2 is exhausted. Append remaining ${value} from list1.`,
+        picked: value,
+      });
+    }
+
+    while (p2 < list2.length) {
+      const value = list2[p2];
+      merged.push(value);
+      p2 += 1;
+      snapshots.push({
+        p1,
+        p2,
+        merged: [...merged],
+        text: `List1 is exhausted. Append remaining ${value} from list2.`,
+        picked: value,
+      });
+    }
+
+    snapshots.push({
+      p1,
+      p2,
+      merged: [...merged],
+      text: `Done. Merged list: ${merged.join(' → ')}.`,
+      picked: null,
+    });
+
+    return snapshots;
+  }
+
+  const snapshots = buildSnapshots();
+  const totalMergedLen = list1.length + list2.length;
+  const state = {
+    stepIndex: 0,
+    width: 0,
+    height: 0,
+  };
+
+  function drawArrowLabel(text, x, y, color) {
+    ctx.fillStyle = color;
+    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+  }
+
+  function drawRow(label, values, y, options = {}) {
+    const { pointerIndex = null, consumed = 0, totalSlots = values.length, mergedLen = 0 } = options;
+    const marginX = 24;
+    const gap = 10;
+    const cellW = Math.max(42, Math.floor((state.width - marginX * 2 - gap * (totalSlots - 1)) / totalSlots));
+    const cellH = 46;
+    const startX = Math.max(14, Math.floor((state.width - (cellW * totalSlots + gap * (totalSlots - 1))) / 2));
+
+    ctx.fillStyle = colorLabel;
+    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 12, y + cellH / 2);
+
+    for (let i = 0; i < totalSlots; i++) {
+      const x = startX + i * (cellW + gap);
+      const hasValue = i < values.length;
+
+      let stroke = colorPending;
+      let lineWidth = 2;
+      if (i < consumed || (label === 'merged' && i < mergedLen)) {
+        stroke = colorConsumed;
+      }
+      if (pointerIndex != null && i === pointerIndex) {
+        stroke = colorCurrent;
+        lineWidth = 3;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, y, cellW, cellH, 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+
+      if (hasValue) {
+        ctx.fillStyle = colorLabel;
+        ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(values[i]), x + cellW / 2, y + cellH / 2 + 1);
+      }
+
+      if (pointerIndex != null && i === pointerIndex) {
+        drawArrowLabel('↑', x + cellW / 2, y - 10, colorCurrent);
+      }
+    }
+  }
+
+  function draw() {
+    const { width, height } = state;
+    if (width <= 0 || height <= 0) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const snapshot = snapshots[state.stepIndex];
+    const rowGap = Math.max(22, Math.floor((height - 3 * 46 - 22) / 3));
+    const y1 = 22;
+    const y2 = y1 + 46 + rowGap;
+    const y3 = y2 + 46 + rowGap;
+
+    drawRow('list1', list1, y1, {
+      pointerIndex: snapshot.p1 < list1.length ? snapshot.p1 : null,
+      consumed: snapshot.p1,
+    });
+    drawRow('list2', list2, y2, {
+      pointerIndex: snapshot.p2 < list2.length ? snapshot.p2 : null,
+      consumed: snapshot.p2,
+    });
+    drawRow('merged', snapshot.merged, y3, {
+      pointerIndex: snapshot.merged.length > 0 ? snapshot.merged.length - 1 : null,
+      totalSlots: totalMergedLen,
+      mergedLen: snapshot.merged.length,
+    });
+  }
+
+  function render() {
+    const { width, height } = resize2dCanvas(canvas);
+    state.width = width;
+    state.height = height;
+    draw();
+    statusEl.textContent = snapshots[state.stepIndex].text;
+    prevBtn.disabled = state.stepIndex <= 0;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
+  }
+
+  prevBtn.addEventListener('click', () => {
+    if (state.stepIndex <= 0) return;
+    state.stepIndex -= 1;
+    render();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (state.stepIndex >= snapshots.length - 1) return;
+    state.stepIndex += 1;
+    render();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    state.stepIndex = 0;
+    render();
+  });
+
+  const ro = new ResizeObserver(() => {
+    render();
+  });
+  ro.observe(canvas);
+
+  render();
+
+  createVisualizationAutoplaySkill({
+    enabled: !reduceMotion,
+    stepInterval: 1000,
+    donePause: 1800,
+    isDone: () => state.stepIndex >= snapshots.length - 1,
+    onStep: () => {
+      if (state.stepIndex >= snapshots.length - 1) return;
+      state.stepIndex += 1;
+      render();
+    },
+    onReset: () => {
+      state.stepIndex = 0;
+      render();
+    },
+  });
+}
+
+function initMergeArrayVisualization() {
+  const canvas = document.getElementById('mergeArrayCanvas');
+  const statusEl = document.getElementById('mergeArrayStatus');
+  const prevBtn = document.getElementById('mergeArrayPrev');
+  const nextBtn = document.getElementById('mergeArrayNext');
+  const resetBtn = document.getElementById('mergeArrayReset');
+
+  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    statusEl.textContent = 'Canvas 2D is not available.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  const reduceMotion = getReducedMotion();
+  const nums1Initial = [1, 2, 3, 0, 0, 0];
+  const m = 3;
+  const nums2 = [2, 5, 6];
+  const n = 3;
+
+  const colorLabel = COLOR_LABEL;
+  const colorCurrent = numberToCssHex(COLOR_MEET);
+  const colorCommitted = numberToCssHex(COLOR_TORTOISE);
+  const colorPending = numberToCssHex(COLOR_NODE);
+
+  function buildSnapshots() {
+    const snapshots = [];
+    const arr = [...nums1Initial];
+    let i = m - 1;
+    let j = n - 1;
+    let k = m + n - 1;
+
+    snapshots.push({
+      arr: [...arr],
+      i,
+      j,
+      k,
+      writeIndex: null,
+      text: 'Start from the back. Compare nums1[i] and nums2[j], write larger into nums1[k].',
+    });
+
+    while (i >= 0 && j >= 0) {
+      if (arr[i] > nums2[j]) {
+        const value = arr[i];
+        arr[k] = value;
+        snapshots.push({
+          arr: [...arr],
+          i: i - 1,
+          j,
+          k: k - 1,
+          writeIndex: k,
+          text: `Write ${value} from nums1[${i}] into nums1[${k}].`,
+        });
+        i -= 1;
+      } else {
+        const value = nums2[j];
+        arr[k] = value;
+        snapshots.push({
+          arr: [...arr],
+          i,
+          j: j - 1,
+          k: k - 1,
+          writeIndex: k,
+          text: `Write ${value} from nums2[${j}] into nums1[${k}].`,
+        });
+        j -= 1;
+      }
+      k -= 1;
+    }
+
+    while (j >= 0) {
+      const value = nums2[j];
+      arr[k] = value;
+      snapshots.push({
+        arr: [...arr],
+        i,
+        j: j - 1,
+        k: k - 1,
+        writeIndex: k,
+        text: `nums1 is exhausted. Copy ${value} from nums2[${j}] into nums1[${k}].`,
+      });
+      j -= 1;
+      k -= 1;
+    }
+
+    snapshots.push({
+      arr: [...arr],
+      i,
+      j,
+      k,
+      writeIndex: null,
+      text: `Done. nums1 = [${arr.join(', ')}].`,
+    });
+
+    return snapshots;
+  }
+
+  const snapshots = buildSnapshots();
+  const state = {
+    stepIndex: 0,
+    width: 0,
+    height: 0,
+  };
+
+  function drawArrayRow(label, values, y, options = {}) {
+    const { pointerIndex = null, highlightIndex = null, activeLen = values.length } = options;
+    const marginX = 24;
+    const gap = 10;
+    const slots = values.length;
+    const cellW = Math.max(42, Math.floor((state.width - marginX * 2 - gap * (slots - 1)) / slots));
+    const cellH = 48;
+    const startX = Math.max(14, Math.floor((state.width - (cellW * slots + gap * (slots - 1))) / 2));
+
+    ctx.fillStyle = colorLabel;
+    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 12, y + cellH / 2);
+
+    for (let idx = 0; idx < slots; idx++) {
+      const x = startX + idx * (cellW + gap);
+      let stroke = idx < activeLen ? colorCommitted : colorPending;
+      let lineWidth = 2;
+      if (highlightIndex != null && idx === highlightIndex) {
+        stroke = colorCurrent;
+        lineWidth = 3;
+      }
+      if (pointerIndex != null && idx === pointerIndex) {
+        stroke = colorCurrent;
+        lineWidth = 3;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, y, cellW, cellH, 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+
+      ctx.fillStyle = colorLabel;
+      ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(values[idx]), x + cellW / 2, y + cellH / 2 + 1);
+
+      if (pointerIndex != null && idx === pointerIndex) {
+        ctx.fillStyle = colorCurrent;
+        ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.fillText('↑', x + cellW / 2, y - 10);
+      }
+    }
+  }
+
+  function draw() {
+    const { width, height } = state;
+    if (width <= 0 || height <= 0) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const snapshot = snapshots[state.stepIndex];
+    const y1 = 38;
+    const y2 = y1 + 48 + 42;
+
+    drawArrayRow('nums1', snapshot.arr, y1, {
+      pointerIndex: snapshot.k >= 0 ? snapshot.k : null,
+      highlightIndex: snapshot.writeIndex,
+      activeLen: snapshot.k + 1,
+    });
+    drawArrayRow('nums2', nums2, y2, {
+      pointerIndex: snapshot.j >= 0 ? snapshot.j : null,
+      activeLen: nums2.length,
+    });
+
+    ctx.fillStyle = colorLabel;
+    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`i = ${Math.max(snapshot.i, -1)}, j = ${Math.max(snapshot.j, -1)}, k = ${Math.max(snapshot.k, -1)}`, 16, height - 16);
+  }
+
+  function render() {
+    const { width, height } = resize2dCanvas(canvas);
+    state.width = width;
+    state.height = height;
+    draw();
+    statusEl.textContent = snapshots[state.stepIndex].text;
+    prevBtn.disabled = state.stepIndex <= 0;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
+  }
+
+  prevBtn.addEventListener('click', () => {
+    if (state.stepIndex <= 0) return;
+    state.stepIndex -= 1;
+    render();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (state.stepIndex >= snapshots.length - 1) return;
+    state.stepIndex += 1;
+    render();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    state.stepIndex = 0;
+    render();
+  });
+
+  const ro = new ResizeObserver(() => {
+    render();
+  });
+  ro.observe(canvas);
+
+  render();
+
+  createVisualizationAutoplaySkill({
+    enabled: !reduceMotion,
+    stepInterval: 1000,
+    donePause: 1800,
+    isDone: () => state.stepIndex >= snapshots.length - 1,
+    onStep: () => {
+      if (state.stepIndex >= snapshots.length - 1) return;
+      state.stepIndex += 1;
+      render();
+    },
+    onReset: () => {
+      state.stepIndex = 0;
+      render();
+    },
+  });
+}
+
+function initSqrtBinarySearchVisualization() {
+  const canvas = document.getElementById('sqrtCanvas');
+  const statusEl = document.getElementById('sqrtStatus');
+  const prevBtn = document.getElementById('sqrtPrev');
+  const nextBtn = document.getElementById('sqrtNext');
+  const resetBtn = document.getElementById('sqrtReset');
+
+  if (!canvas || !statusEl || !prevBtn || !nextBtn || !resetBtn) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    statusEl.textContent = 'Canvas 2D is not available.';
+    statusEl.classList.add('is-error');
+    return;
+  }
+
+  const reduceMotion = getReducedMotion();
+  const x = 26;
+  const initialHi = Math.floor(x / 2) + 1;
+
+  const colorLabel = COLOR_LABEL;
+  const colorCurrent = numberToCssHex(COLOR_MEET);
+  const colorLo = numberToCssHex(COLOR_TORTOISE);
+  const colorHi = numberToCssHex(COLOR_HARE);
+  const colorPending = numberToCssHex(COLOR_NODE);
+
+  function buildSnapshots() {
+    const snapshots = [];
+    let lo = 0;
+    let hi = initialHi;
+    let ans = 0;
+
+    snapshots.push({
+      lo,
+      hi,
+      mid: null,
+      ans,
+      text: `Search in [${lo}, ${hi}] for floor sqrt of ${x}.`,
+    });
+
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const square = mid * mid;
+
+      if (square === x) {
+        ans = mid;
+        snapshots.push({
+          lo,
+          hi,
+          mid,
+          ans,
+          text: `mid=${mid}, mid²=${square}. Exact match, answer is ${mid}.`,
+        });
+        break;
+      }
+
+      if (square < x) {
+        ans = mid;
+        lo = mid + 1;
+        snapshots.push({
+          lo,
+          hi,
+          mid,
+          ans,
+          text: `mid=${mid}, mid²=${square} < ${x}. Move lo to ${lo}, best so far is ${ans}.`,
+        });
+      } else {
+        hi = mid - 1;
+        snapshots.push({
+          lo,
+          hi,
+          mid,
+          ans,
+          text: `mid=${mid}, mid²=${square} > ${x}. Move hi to ${hi}.`,
+        });
+      }
+    }
+
+    const last = snapshots[snapshots.length - 1];
+    if (last.mid == null || !last.text.includes('Exact match')) {
+      snapshots.push({
+        lo,
+        hi,
+        mid: null,
+        ans,
+        text: `Done. ⌊√${x}⌋ = ${ans}.`,
+      });
+    }
+
+    return snapshots;
+  }
+
+  const snapshots = buildSnapshots();
+  const state = {
+    stepIndex: 0,
+    width: 0,
+    height: 0,
+  };
+
+  function draw() {
+    const { width, height } = state;
+    if (width <= 0 || height <= 0) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const snapshot = snapshots[state.stepIndex];
+    const rangeMax = initialHi;
+    const marginX = 24;
+    const gap = 8;
+    const slots = rangeMax + 1;
+    const cellW = Math.max(24, Math.floor((width - marginX * 2 - gap * (slots - 1)) / slots));
+    const cellH = 44;
+    const rowW = cellW * slots + gap * (slots - 1);
+    const startX = Math.max(14, Math.floor((width - rowW) / 2));
+    const y = Math.max(72, Math.floor(height * 0.38));
+
+    ctx.fillStyle = colorLabel;
+    ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`x = ${x}`, 16, 20);
+    ctx.fillText(`best = ${snapshot.ans}`, 16, 40);
+
+    for (let value = 0; value <= rangeMax; value++) {
+      const xPos = startX + value * (cellW + gap);
+      let stroke = colorPending;
+      let lineWidth = 2;
+
+      if (value >= snapshot.lo && value <= snapshot.hi) {
+        stroke = numberToCssHex(COLOR_EDGE);
+      }
+      if (value === snapshot.lo) {
+        stroke = colorLo;
+        lineWidth = 3;
+      }
+      if (value === snapshot.hi) {
+        stroke = colorHi;
+        lineWidth = 3;
+      }
+      if (snapshot.mid != null && value === snapshot.mid) {
+        stroke = colorCurrent;
+        lineWidth = 4;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(xPos, y, cellW, cellH, 8);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+
+      ctx.fillStyle = colorLabel;
+      ctx.font = '700 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(value), xPos + cellW / 2, y + cellH / 2 + 1);
+
+      if (value === snapshot.lo) {
+        ctx.fillStyle = colorLo;
+        ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.fillText('lo', xPos + cellW / 2, y - 20);
+      }
+      if (value === snapshot.hi) {
+        ctx.fillStyle = colorHi;
+        ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.fillText('hi', xPos + cellW / 2, y - 34);
+      }
+      if (snapshot.mid != null && value === snapshot.mid) {
+        ctx.fillStyle = colorCurrent;
+        ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.fillText('mid', xPos + cellW / 2, y + cellH + 14);
+      }
+    }
+  }
+
+  function render() {
+    const { width, height } = resize2dCanvas(canvas);
+    state.width = width;
+    state.height = height;
+    draw();
+    statusEl.textContent = snapshots[state.stepIndex].text;
+    prevBtn.disabled = state.stepIndex <= 0;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
+  }
+
+  prevBtn.addEventListener('click', () => {
+    if (state.stepIndex <= 0) return;
+    state.stepIndex -= 1;
+    render();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if (state.stepIndex >= snapshots.length - 1) return;
+    state.stepIndex += 1;
+    render();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    state.stepIndex = 0;
+    render();
+  });
+
+  const ro = new ResizeObserver(() => {
+    render();
+  });
+  ro.observe(canvas);
+
+  render();
+
+  createVisualizationAutoplaySkill({
+    enabled: !reduceMotion,
+    stepInterval: 1000,
+    donePause: 1800,
+    isDone: () => state.stepIndex >= snapshots.length - 1,
+    onStep: () => {
+      if (state.stepIndex >= snapshots.length - 1) return;
+      state.stepIndex += 1;
+      render();
+    },
+    onReset: () => {
+      state.stepIndex = 0;
+      render();
+    },
+  });
+}
+
 function init() {
   initFloydVisualization();
   initTreeTraversalVisualization();
   initHashTableVisualization();
+  initFibonacciVisualization();
+  initMergeListsVisualization();
+  initMergeArrayVisualization();
+  initSqrtBinarySearchVisualization();
 }
 
 init();

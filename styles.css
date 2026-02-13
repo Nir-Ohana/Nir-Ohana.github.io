@@ -331,6 +331,10 @@ h1 {
   height: 560px;
 }
 
+.viz-canvas-algo {
+  height: 340px;
+}
+
 .input-compact {
   max-width: 180px;
 }
