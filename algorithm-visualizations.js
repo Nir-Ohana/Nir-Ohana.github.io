@@ -424,6 +424,24 @@ function capitalize(word) {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function lerp(start, end, t) {
+  return start + (end - start) * t;
+}
+
+function easeOutCubic(t) {
+  const k = clamp01(t);
+  return 1 - Math.pow(1 - k, 3);
+}
+
+function easeInOutCubic(t) {
+  const k = clamp01(t);
+  return k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+}
+
 function initTreeTraversalVisualization() {
   const canvas = document.getElementById('treeCanvas');
   const statusEl = document.getElementById('treeStatus');
@@ -992,6 +1010,7 @@ function initFibonacciVisualization() {
         dp: [...dp],
         current: null,
         text: 'Base cases: F(0)=0, F(1)=1. Ready to compute from i=2.',
+        calc: null,
       },
     ];
 
@@ -1001,6 +1020,14 @@ function initFibonacciVisualization() {
         dp: [...dp],
         current: i,
         text: `i=${i}: F(${i}) = F(${i - 1}) + F(${i - 2}) = ${dp[i - 1]} + ${dp[i - 2]} = ${dp[i]}`,
+        calc: {
+          i,
+          leftIndex: i - 1,
+          rightIndex: i - 2,
+          leftValue: dp[i - 1],
+          rightValue: dp[i - 2],
+          result: dp[i],
+        },
       });
     }
 
@@ -1008,6 +1035,7 @@ function initFibonacciVisualization() {
       dp: [...dp],
       current: null,
       text: `Done. F(${n}) = ${dp[n]}.`,
+      calc: null,
     });
 
     return snapshots;
@@ -1018,7 +1046,28 @@ function initFibonacciVisualization() {
     stepIndex: 0,
     width: 0,
     height: 0,
+    animation: null,
   };
+
+  const FIB_ANIMATION_MS = 700;
+
+  function getLayout(width, height) {
+    const marginX = 16;
+    const gap = 8;
+    const cellW = Math.max(40, Math.floor((width - marginX * 2 - n * gap) / (n + 1)));
+    const cellH = Math.max(56, Math.min(76, Math.floor(height * 0.36)));
+    const usedW = cellW * (n + 1) + gap * n;
+    const startX = Math.max(12, Math.floor((width - usedW) / 2));
+    const y = Math.max(78, Math.floor((height - cellH) / 2));
+    return { gap, cellW, cellH, startX, y };
+  }
+
+  function getCellCenter(layout, index) {
+    return {
+      x: layout.startX + index * (layout.cellW + layout.gap) + layout.cellW / 2,
+      y: layout.y + layout.cellH / 2,
+    };
+  }
 
   function draw() {
     const { width, height } = state;
@@ -1028,14 +1077,13 @@ function initFibonacciVisualization() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const snapshot = snapshots[state.stepIndex];
-    const marginX = 16;
-    const gap = 8;
-    const cellW = Math.max(40, Math.floor((width - marginX * 2 - n * gap) / (n + 1)));
-    const cellH = Math.max(56, Math.min(76, Math.floor(height * 0.36)));
-    const usedW = cellW * (n + 1) + gap * n;
-    const startX = Math.max(12, Math.floor((width - usedW) / 2));
-    const y = Math.max(40, Math.floor((height - cellH) / 2));
+    const layout = getLayout(width, height);
+    const baseSnapshot = snapshots[state.stepIndex];
+    const activeSnapshot = state.animation ? snapshots[state.animation.toIndex] : baseSnapshot;
+    const animationProgress = state.animation ? easeInOutCubic(state.animation.progress) : 0;
+    const activeCalc = state.animation
+      ? snapshots[state.animation.toIndex].calc
+      : snapshots[state.stepIndex].calc;
 
     ctx.fillStyle = colorLabel;
     ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
@@ -1043,22 +1091,36 @@ function initFibonacciVisualization() {
     ctx.textBaseline = 'middle';
     ctx.fillText(`n = ${n}`, 16, 20);
 
+    if (activeCalc) {
+      const eq = `F(${activeCalc.i}) = F(${activeCalc.leftIndex}) + F(${activeCalc.rightIndex}) = ${activeCalc.leftValue} + ${activeCalc.rightValue}`;
+      const showResult = !state.animation || animationProgress > 0.68;
+      ctx.fillText(showResult ? `${eq} = ${activeCalc.result}` : eq, 16, 42);
+    }
+
     for (let i = 0; i <= n; i++) {
-      const x = startX + i * (cellW + gap);
-      const value = snapshot.dp[i];
+      const x = layout.startX + i * (layout.cellW + layout.gap);
+      let value = baseSnapshot.dp[i];
+
+      if (!state.animation) {
+        value = activeSnapshot.dp[i];
+      } else if (activeCalc && i !== activeCalc.i && i <= activeCalc.leftIndex) {
+        value = activeSnapshot.dp[i];
+      } else if (activeCalc && i === activeCalc.i && animationProgress > 0.75) {
+        value = activeSnapshot.dp[i];
+      }
 
       let stroke = colorPending;
       let lineWidth = 2;
       if (value != null) {
         stroke = colorComputed;
       }
-      if (snapshot.current === i) {
+      if (activeSnapshot.current === i) {
         stroke = colorCurrent;
         lineWidth = 3;
       }
 
       ctx.beginPath();
-      ctx.roundRect(x, y, cellW, cellH, 10);
+      ctx.roundRect(x, layout.y, layout.cellW, layout.cellH, 10);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = stroke;
@@ -1069,14 +1131,56 @@ function initFibonacciVisualization() {
       ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`i=${i}`, x + cellW / 2, y + 14);
+      ctx.fillText(`i=${i}`, x + layout.cellW / 2, layout.y + 14);
 
       ctx.font = '700 17px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.fillText(value == null ? '-' : String(value), x + cellW / 2, y + cellH / 2 + 8);
+      ctx.fillText(value == null ? '-' : String(value), x + layout.cellW / 2, layout.y + layout.cellH / 2 + 8);
+    }
+
+    if (state.animation && activeCalc) {
+      const leftPos = getCellCenter(layout, activeCalc.leftIndex);
+      const rightPos = getCellCenter(layout, activeCalc.rightIndex);
+      const targetPos = getCellCenter(layout, activeCalc.i);
+      const travel = easeOutCubic(animationProgress);
+
+      const leftX = lerp(leftPos.x, targetPos.x, travel);
+      const leftY = lerp(leftPos.y, targetPos.y - 18, travel);
+      const rightX = lerp(rightPos.x, targetPos.x, travel);
+      const rightY = lerp(rightPos.y, targetPos.y + 18, travel);
+
+      ctx.globalAlpha = animationProgress < 0.85 ? 1 : 1 - (animationProgress - 0.85) / 0.15;
+
+      ctx.beginPath();
+      ctx.arc(leftX, leftY, 14, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = colorCurrent;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.fillStyle = colorLabel;
+      ctx.font = '700 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(activeCalc.leftValue), leftX, leftY + 1);
+
+      ctx.beginPath();
+      ctx.arc(rightX, rightY, 14, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = colorCurrent;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.fillStyle = colorLabel;
+      ctx.fillText(String(activeCalc.rightValue), rightX, rightY + 1);
+      ctx.globalAlpha = 1;
     }
   }
 
   function setStatus() {
+    if (state.animation) {
+      statusEl.textContent = snapshots[state.animation.toIndex].text;
+      return;
+    }
     statusEl.textContent = snapshots[state.stepIndex].text;
   }
 
@@ -1086,8 +1190,40 @@ function initFibonacciVisualization() {
     state.height = height;
     draw();
     setStatus();
-    prevBtn.disabled = state.stepIndex <= 0;
-    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
+    prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
+  }
+
+  function runStepAnimation(targetIndex) {
+    if (state.animation || targetIndex <= state.stepIndex || reduceMotion) {
+      state.stepIndex = targetIndex;
+      render();
+      return;
+    }
+
+    state.animation = {
+      toIndex: targetIndex,
+      startTs: performance.now(),
+      progress: 0,
+    };
+
+    function tick(ts) {
+      if (!state.animation) return;
+      const elapsed = ts - state.animation.startTs;
+      state.animation.progress = clamp01(elapsed / FIB_ANIMATION_MS);
+
+      if (state.animation.progress >= 1) {
+        state.stepIndex = state.animation.toIndex;
+        state.animation = null;
+        render();
+        return;
+      }
+
+      render();
+      requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
   }
 
   prevBtn.addEventListener('click', () => {
@@ -1097,13 +1233,13 @@ function initFibonacciVisualization() {
   });
 
   nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1) return;
-    state.stepIndex += 1;
-    render();
+    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+    runStepAnimation(state.stepIndex + 1);
   });
 
   resetBtn.addEventListener('click', () => {
     state.stepIndex = 0;
+    state.animation = null;
     render();
   });
 
@@ -1118,14 +1254,15 @@ function initFibonacciVisualization() {
     enabled: !reduceMotion,
     stepInterval: 1000,
     donePause: 1800,
+    isBusy: () => state.animation !== null,
     isDone: () => state.stepIndex >= snapshots.length - 1,
     onStep: () => {
-      if (state.stepIndex >= snapshots.length - 1) return;
-      state.stepIndex += 1;
-      render();
+      if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+      runStepAnimation(state.stepIndex + 1);
     },
     onReset: () => {
       state.stepIndex = 0;
+      state.animation = null;
       render();
     },
   });
@@ -1151,11 +1288,12 @@ function initMergeListsVisualization() {
   const list1 = [1, 2, 4];
   const list2 = [1, 3, 4];
 
-  const colorEdge = numberToCssHex(COLOR_EDGE);
   const colorLabel = COLOR_LABEL;
   const colorCurrent = numberToCssHex(COLOR_MEET);
   const colorConsumed = numberToCssHex(COLOR_TORTOISE);
   const colorPending = numberToCssHex(COLOR_NODE);
+
+  const MERGE_LISTS_ANIMATION_MS = 700;
 
   function buildSnapshots() {
     const snapshots = [];
@@ -1169,6 +1307,9 @@ function initMergeListsVisualization() {
       merged: [...merged],
       text: 'Start merge. Compare list1[p1] and list2[p2], take the smaller value.',
       picked: null,
+      pickedFrom: null,
+      pickedSourceIndex: null,
+      mergedIndex: null,
     });
 
     while (p1 < list1.length && p2 < list2.length) {
@@ -1186,6 +1327,9 @@ function initMergeListsVisualization() {
           ? `Take ${value} from list1 (stable on ties).`
           : `Take ${value} from list2.`,
         picked: value,
+        pickedFrom: takeLeft ? 'list1' : 'list2',
+        pickedSourceIndex: takeLeft ? p1 - 1 : p2 - 1,
+        mergedIndex: merged.length - 1,
       });
     }
 
@@ -1199,6 +1343,9 @@ function initMergeListsVisualization() {
         merged: [...merged],
         text: `List2 is exhausted. Append remaining ${value} from list1.`,
         picked: value,
+        pickedFrom: 'list1',
+        pickedSourceIndex: p1 - 1,
+        mergedIndex: merged.length - 1,
       });
     }
 
@@ -1212,6 +1359,9 @@ function initMergeListsVisualization() {
         merged: [...merged],
         text: `List1 is exhausted. Append remaining ${value} from list2.`,
         picked: value,
+        pickedFrom: 'list2',
+        pickedSourceIndex: p2 - 1,
+        mergedIndex: merged.length - 1,
       });
     }
 
@@ -1221,6 +1371,9 @@ function initMergeListsVisualization() {
       merged: [...merged],
       text: `Done. Merged list: ${merged.join(' → ')}.`,
       picked: null,
+      pickedFrom: null,
+      pickedSourceIndex: null,
+      mergedIndex: null,
     });
 
     return snapshots;
@@ -1232,32 +1385,56 @@ function initMergeListsVisualization() {
     stepIndex: 0,
     width: 0,
     height: 0,
+    animation: null,
   };
 
-  function drawArrowLabel(text, x, y, color) {
-    ctx.fillStyle = color;
-    ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, x, y);
+  function getRowLayout(totalSlots) {
+    const marginX = 42;
+    const gap = 12;
+    const radius = Math.max(16, Math.min(24, Math.floor((state.width - marginX * 2 - gap * (totalSlots - 1)) / (totalSlots * 2.4))));
+    const totalWidth = totalSlots * radius * 2 + (totalSlots - 1) * gap;
+    const startX = Math.max(24, Math.floor((state.width - totalWidth) / 2));
+    return { radius, gap, startX };
+  }
+
+  function getNodeCenter(rowY, totalSlots, index) {
+    const layout = getRowLayout(totalSlots);
+    return {
+      x: layout.startX + layout.radius + index * (layout.radius * 2 + layout.gap),
+      y: rowY + layout.radius,
+      radius: layout.radius,
+    };
   }
 
   function drawRow(label, values, y, options = {}) {
     const { pointerIndex = null, consumed = 0, totalSlots = values.length, mergedLen = 0 } = options;
-    const marginX = 24;
-    const gap = 10;
-    const cellW = Math.max(42, Math.floor((state.width - marginX * 2 - gap * (totalSlots - 1)) / totalSlots));
-    const cellH = 46;
-    const startX = Math.max(14, Math.floor((state.width - (cellW * totalSlots + gap * (totalSlots - 1))) / 2));
+    const layout = getRowLayout(totalSlots);
 
     ctx.fillStyle = colorLabel;
     ctx.font = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, 12, y + cellH / 2);
+    ctx.fillText(label, 14, y + layout.radius);
+
+    for (let i = 0; i < totalSlots - 1; i++) {
+      const a = getNodeCenter(y, totalSlots, i);
+      const b = getNodeCenter(y, totalSlots, i + 1);
+      ctx.strokeStyle = numberToCssHex(COLOR_EDGE);
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(a.x + a.radius, a.y);
+      ctx.lineTo(b.x - b.radius, b.y);
+      ctx.stroke();
+
+      ctx.fillStyle = numberToCssHex(COLOR_EDGE);
+      ctx.font = '700 10px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('▶', (a.x + b.x) / 2, a.y - 1);
+    }
 
     for (let i = 0; i < totalSlots; i++) {
-      const x = startX + i * (cellW + gap);
+      const center = getNodeCenter(y, totalSlots, i);
       const hasValue = i < values.length;
 
       let stroke = colorPending;
@@ -1271,7 +1448,7 @@ function initMergeListsVisualization() {
       }
 
       ctx.beginPath();
-      ctx.roundRect(x, y, cellW, cellH, 10);
+      ctx.arc(center.x, center.y, center.radius, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = stroke;
@@ -1283,11 +1460,15 @@ function initMergeListsVisualization() {
         ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(String(values[i]), x + cellW / 2, y + cellH / 2 + 1);
+        ctx.fillText(String(values[i]), center.x, center.y + 1);
       }
 
       if (pointerIndex != null && i === pointerIndex) {
-        drawArrowLabel('↑', x + cellW / 2, y - 10, colorCurrent);
+        ctx.fillStyle = colorCurrent;
+        ctx.font = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('↑', center.x, y - 14);
       }
     }
   }
@@ -1301,10 +1482,10 @@ function initMergeListsVisualization() {
     ctx.clearRect(0, 0, width, height);
 
     const snapshot = snapshots[state.stepIndex];
-    const rowGap = Math.max(22, Math.floor((height - 3 * 46 - 22) / 3));
+    const rowGap = Math.max(24, Math.floor((height - 3 * 52 - 32) / 3));
     const y1 = 22;
-    const y2 = y1 + 46 + rowGap;
-    const y3 = y2 + 46 + rowGap;
+    const y2 = y1 + 52 + rowGap;
+    const y3 = y2 + 52 + rowGap;
 
     drawRow('list1', list1, y1, {
       pointerIndex: snapshot.p1 < list1.length ? snapshot.p1 : null,
@@ -1319,6 +1500,36 @@ function initMergeListsVisualization() {
       totalSlots: totalMergedLen,
       mergedLen: snapshot.merged.length,
     });
+
+    if (state.animation) {
+      const anim = state.animation;
+      const toSnapshot = snapshots[anim.toIndex];
+      if (toSnapshot.picked != null && toSnapshot.pickedFrom != null && toSnapshot.pickedSourceIndex != null && toSnapshot.mergedIndex != null) {
+        const p = easeInOutCubic(anim.progress);
+        const sourceRowY = toSnapshot.pickedFrom === 'list1' ? y1 : y2;
+        const sourceSlots = toSnapshot.pickedFrom === 'list1' ? list1.length : list2.length;
+        const sourceCenter = getNodeCenter(sourceRowY, sourceSlots, toSnapshot.pickedSourceIndex);
+        const targetCenter = getNodeCenter(y3, totalMergedLen, toSnapshot.mergedIndex);
+
+        const xPos = lerp(sourceCenter.x, targetCenter.x, p);
+        const arcLift = Math.sin(p * Math.PI) * 34;
+        const yPos = lerp(sourceCenter.y, targetCenter.y, p) + arcLift;
+
+        ctx.beginPath();
+        ctx.arc(xPos, yPos, sourceCenter.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = colorCurrent;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = colorLabel;
+        ctx.font = '700 16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(toSnapshot.picked), xPos, yPos + 1);
+      }
+    }
   }
 
   function render() {
@@ -1326,9 +1537,43 @@ function initMergeListsVisualization() {
     state.width = width;
     state.height = height;
     draw();
-    statusEl.textContent = snapshots[state.stepIndex].text;
-    prevBtn.disabled = state.stepIndex <= 0;
-    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
+    statusEl.textContent = state.animation
+      ? snapshots[state.animation.toIndex].text
+      : snapshots[state.stepIndex].text;
+    prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
+  }
+
+  function runStepAnimation(targetIndex) {
+    if (state.animation || targetIndex <= state.stepIndex || reduceMotion) {
+      state.stepIndex = targetIndex;
+      render();
+      return;
+    }
+
+    state.animation = {
+      toIndex: targetIndex,
+      startTs: performance.now(),
+      progress: 0,
+    };
+
+    function tick(ts) {
+      if (!state.animation) return;
+      const elapsed = ts - state.animation.startTs;
+      state.animation.progress = clamp01(elapsed / MERGE_LISTS_ANIMATION_MS);
+
+      if (state.animation.progress >= 1) {
+        state.stepIndex = state.animation.toIndex;
+        state.animation = null;
+        render();
+        return;
+      }
+
+      render();
+      requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
   }
 
   prevBtn.addEventListener('click', () => {
@@ -1338,13 +1583,13 @@ function initMergeListsVisualization() {
   });
 
   nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1) return;
-    state.stepIndex += 1;
-    render();
+    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+    runStepAnimation(state.stepIndex + 1);
   });
 
   resetBtn.addEventListener('click', () => {
     state.stepIndex = 0;
+    state.animation = null;
     render();
   });
 
@@ -1359,14 +1604,15 @@ function initMergeListsVisualization() {
     enabled: !reduceMotion,
     stepInterval: 1000,
     donePause: 1800,
+    isBusy: () => state.animation !== null,
     isDone: () => state.stepIndex >= snapshots.length - 1,
     onStep: () => {
-      if (state.stepIndex >= snapshots.length - 1) return;
-      state.stepIndex += 1;
-      render();
+      if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+      runStepAnimation(state.stepIndex + 1);
     },
     onReset: () => {
       state.stepIndex = 0;
+      state.animation = null;
       render();
     },
   });
@@ -1652,6 +1898,14 @@ function initSqrtBinarySearchVisualization() {
       const mid = Math.floor((lo + hi) / 2);
       const square = mid * mid;
 
+      snapshots.push({
+        lo,
+        hi,
+        mid,
+        ans,
+        text: `Check mid=${mid}: ${mid}² = ${square}.`,
+      });
+
       if (square === x) {
         ans = mid;
         snapshots.push({
@@ -1659,7 +1913,7 @@ function initSqrtBinarySearchVisualization() {
           hi,
           mid,
           ans,
-          text: `mid=${mid}, mid²=${square}. Exact match, answer is ${mid}.`,
+          text: `Exact match at mid=${mid}. Answer is ${mid}.`,
         });
         break;
       }
@@ -1672,7 +1926,7 @@ function initSqrtBinarySearchVisualization() {
           hi,
           mid,
           ans,
-          text: `mid=${mid}, mid²=${square} < ${x}. Move lo to ${lo}, best so far is ${ans}.`,
+          text: `${square} < ${x}. Move lo to ${lo}; best so far is ${ans}.`,
         });
       } else {
         hi = mid - 1;
@@ -1681,7 +1935,7 @@ function initSqrtBinarySearchVisualization() {
           hi,
           mid,
           ans,
-          text: `mid=${mid}, mid²=${square} > ${x}. Move hi to ${hi}.`,
+          text: `${square} > ${x}. Move hi to ${hi}.`,
         });
       }
     }
@@ -1705,7 +1959,45 @@ function initSqrtBinarySearchVisualization() {
     stepIndex: 0,
     width: 0,
     height: 0,
+    animation: null,
   };
+
+  const SQRT_ANIMATION_MS = 620;
+
+  function getCellCenter(startX, cellW, gap, value, y, cellH) {
+    return {
+      x: startX + value * (cellW + gap) + cellW / 2,
+      y: y + cellH / 2,
+    };
+  }
+
+  function drawMarker(label, color, value, startX, cellW, gap, y, cellH, offsetY = -26, alpha = 1) {
+    if (value == null || value < 0 || value > initialHi) return;
+    const center = getCellCenter(startX, cellW, gap, value, y, cellH);
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y - cellH / 2 - 3);
+    ctx.lineTo(center.x, center.y + offsetY + 8);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(center.x, center.y + offsetY, 12, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, center.x, center.y + offsetY + 1);
+    ctx.globalAlpha = 1;
+  }
 
   function draw() {
     const { width, height } = state;
@@ -1716,6 +2008,32 @@ function initSqrtBinarySearchVisualization() {
     ctx.clearRect(0, 0, width, height);
 
     const snapshot = snapshots[state.stepIndex];
+    const toSnapshot = state.animation ? snapshots[state.animation.toIndex] : snapshot;
+    const t = state.animation ? easeInOutCubic(state.animation.progress) : 1;
+
+    const viewLo = state.animation
+      ? lerp(snapshot.lo, toSnapshot.lo, t)
+      : snapshot.lo;
+    const viewHi = state.animation
+      ? lerp(snapshot.hi, toSnapshot.hi, t)
+      : snapshot.hi;
+
+    const midFrom = snapshot.mid;
+    const midTo = toSnapshot.mid;
+    let viewMid = midTo;
+    let midAlpha = 1;
+    if (state.animation) {
+      if (midFrom == null && midTo != null) {
+        viewMid = midTo;
+        midAlpha = t;
+      } else if (midFrom != null && midTo == null) {
+        viewMid = midFrom;
+        midAlpha = 1 - t;
+      } else if (midFrom != null && midTo != null) {
+        viewMid = lerp(midFrom, midTo, t);
+      }
+    }
+
     const rangeMax = initialHi;
     const marginX = 24;
     const gap = 8;
@@ -1730,26 +2048,29 @@ function initSqrtBinarySearchVisualization() {
     ctx.font = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
+    const ansValue = state.animation
+      ? Math.round(lerp(snapshot.ans, toSnapshot.ans, t))
+      : snapshot.ans;
     ctx.fillText(`x = ${x}`, 16, 20);
-    ctx.fillText(`best = ${snapshot.ans}`, 16, 40);
+    ctx.fillText(`best = ${ansValue}`, 16, 40);
 
     for (let value = 0; value <= rangeMax; value++) {
       const xPos = startX + value * (cellW + gap);
       let stroke = colorPending;
       let lineWidth = 2;
 
-      if (value >= snapshot.lo && value <= snapshot.hi) {
+      if (value >= Math.ceil(viewLo) && value <= Math.floor(viewHi)) {
         stroke = numberToCssHex(COLOR_EDGE);
       }
-      if (value === snapshot.lo) {
+      if (Math.abs(value - viewLo) < 0.5) {
         stroke = colorLo;
         lineWidth = 3;
       }
-      if (value === snapshot.hi) {
+      if (Math.abs(value - viewHi) < 0.5) {
         stroke = colorHi;
         lineWidth = 3;
       }
-      if (snapshot.mid != null && value === snapshot.mid) {
+      if (viewMid != null && Math.abs(value - viewMid) < 0.5) {
         stroke = colorCurrent;
         lineWidth = 4;
       }
@@ -1767,23 +2088,11 @@ function initSqrtBinarySearchVisualization() {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(value), xPos + cellW / 2, y + cellH / 2 + 1);
-
-      if (value === snapshot.lo) {
-        ctx.fillStyle = colorLo;
-        ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-        ctx.fillText('lo', xPos + cellW / 2, y - 20);
-      }
-      if (value === snapshot.hi) {
-        ctx.fillStyle = colorHi;
-        ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-        ctx.fillText('hi', xPos + cellW / 2, y - 34);
-      }
-      if (snapshot.mid != null && value === snapshot.mid) {
-        ctx.fillStyle = colorCurrent;
-        ctx.font = '700 11px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-        ctx.fillText('mid', xPos + cellW / 2, y + cellH + 14);
-      }
     }
+
+    drawMarker('lo', colorLo, viewLo, startX, cellW, gap, y, cellH, -28, 1);
+    drawMarker('hi', colorHi, viewHi, startX, cellW, gap, y, cellH, -52, 1);
+    drawMarker('mid', colorCurrent, viewMid, startX, cellW, gap, y, cellH, 56, midAlpha);
   }
 
   function render() {
@@ -1791,9 +2100,43 @@ function initSqrtBinarySearchVisualization() {
     state.width = width;
     state.height = height;
     draw();
-    statusEl.textContent = snapshots[state.stepIndex].text;
-    prevBtn.disabled = state.stepIndex <= 0;
-    nextBtn.disabled = state.stepIndex >= snapshots.length - 1;
+    statusEl.textContent = state.animation
+      ? snapshots[state.animation.toIndex].text
+      : snapshots[state.stepIndex].text;
+    prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
+    nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
+  }
+
+  function runStepAnimation(targetIndex) {
+    if (state.animation || targetIndex <= state.stepIndex || reduceMotion) {
+      state.stepIndex = targetIndex;
+      render();
+      return;
+    }
+
+    state.animation = {
+      toIndex: targetIndex,
+      startTs: performance.now(),
+      progress: 0,
+    };
+
+    function tick(ts) {
+      if (!state.animation) return;
+      const elapsed = ts - state.animation.startTs;
+      state.animation.progress = clamp01(elapsed / SQRT_ANIMATION_MS);
+
+      if (state.animation.progress >= 1) {
+        state.stepIndex = state.animation.toIndex;
+        state.animation = null;
+        render();
+        return;
+      }
+
+      render();
+      requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
   }
 
   prevBtn.addEventListener('click', () => {
@@ -1803,13 +2146,13 @@ function initSqrtBinarySearchVisualization() {
   });
 
   nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1) return;
-    state.stepIndex += 1;
-    render();
+    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+    runStepAnimation(state.stepIndex + 1);
   });
 
   resetBtn.addEventListener('click', () => {
     state.stepIndex = 0;
+    state.animation = null;
     render();
   });
 
@@ -1824,14 +2167,15 @@ function initSqrtBinarySearchVisualization() {
     enabled: !reduceMotion,
     stepInterval: 1000,
     donePause: 1800,
+    isBusy: () => state.animation !== null,
     isDone: () => state.stepIndex >= snapshots.length - 1,
     onStep: () => {
-      if (state.stepIndex >= snapshots.length - 1) return;
-      state.stepIndex += 1;
-      render();
+      if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+      runStepAnimation(state.stepIndex + 1);
     },
     onReset: () => {
       state.stepIndex = 0;
+      state.animation = null;
       render();
     },
   });
