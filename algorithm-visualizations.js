@@ -1571,7 +1571,7 @@ function initMajorityElementVisualization() {
     const length = getRandomIntInclusive(9, 13);
     const majorityValue = getRandomIntInclusive(1, 9);
     const minMajority = Math.floor(length / 2) + 1;
-    const majorityCount = getRandomIntInclusive(minMajority, length);
+    const majorityCount = minMajority;
     const arr = [];
 
     for (let i = 0; i < majorityCount; i++) arr.push(majorityValue);
