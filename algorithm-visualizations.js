@@ -2041,6 +2041,408 @@ function initExcelTitleNumberVisualization() {
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Number of 1 bits — Hamming weight (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function initHammingWeightVisualization() {
+  const BITS = 32;
+
+  function randomN() {
+    // pick 8-16 bit numbers so visualization is interesting but compact
+    return getRandomIntInclusive(3, 65535);
+  }
+
+  function toBin(v) {
+    return (v >>> 0).toString(2).padStart(BITS, '0');
+  }
+
+  function buildSnapshots() {
+    let n = randomN();
+    const original = n;
+    const snaps = [];
+    let hamm = 0;
+
+    snaps.push({
+      n, original, hamm, cleared: null, binary: toBin(n),
+      text: `n = ${original} (binary: ${toBin(original).replace(/^0+/, '') || '0'}). Count = 0.`,
+    });
+
+    while (n !== 0) {
+      const prev = n;
+      const cleared = prev & ~(prev & -prev); // same as n & (n-1)
+      n = n & (n - 1);
+      hamm += 1;
+
+      snaps.push({
+        n, original, hamm, prevN: prev,
+        cleared: BITS - 1 - Math.floor(Math.log2(prev & -prev)),
+        binary: toBin(n), prevBinary: toBin(prev),
+        text: `n &= (n-1): ${prev} → ${n}. Cleared bit ${BITS - 1 - Math.floor(Math.log2(prev & -prev))}. Count = ${hamm}.`,
+      });
+    }
+
+    snaps.push({
+      n: 0, original, hamm, cleared: null, binary: toBin(0),
+      text: `Done. Hamming weight of ${original} is ${hamm}.`,
+    });
+    return snaps;
+  }
+
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    const active = isAnimating ? toSnapshot : snapshot;
+    const binary = active.binary;
+
+    // Header
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`n = ${active.original}`, 16, 20);
+    ctx.fillText(`count = ${active.hamm}`, 16, 40);
+    if (active.prevN != null) {
+      ctx.fillText(`n &= (n - 1):  ${active.prevN} & ${active.prevN - 1} = ${active.n}`, 16, 60);
+    }
+
+    // Bit grid — show only meaningful bits (trim leading zeros but keep at least 8)
+    const firstOne = binary.indexOf('1');
+    const startBit = Math.max(0, Math.min(firstOne, BITS - 8));
+    const visibleBits = BITS - startBit;
+
+    const mx = 16;
+    const gap = 3;
+    const maxCw = 28;
+    const cw = Math.max(14, Math.min(maxCw, Math.floor((width - mx * 2 - gap * (visibleBits - 1)) / visibleBits)));
+    const ch = 38;
+    const total = cw * visibleBits + gap * (visibleBits - 1);
+    const sx = Math.max(8, Math.floor((width - total) / 2));
+    const sy = Math.max(78, Math.floor(height * 0.32));
+
+    for (let vi = 0; vi < visibleBits; vi++) {
+      const bi = startBit + vi;
+      const bit = binary[bi];
+      const x = sx + vi * (cw + gap);
+
+      let stroke = CSS.node;
+      let lw = 2;
+      if (bit === '1') { stroke = CSS.tortoise; lw = 2.5; }
+
+      // Highlight the bit that was just cleared
+      if (active.cleared != null && bi === active.cleared) {
+        stroke = CSS.hare;
+        lw = 3;
+        if (isAnimating) {
+          // Flash effect during animation
+          const flash = Math.sin(progress * Math.PI);
+          ctx.globalAlpha = 0.4 + 0.6 * (1 - flash);
+        }
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, sy, cw, ch, 6);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = bit === '1' ? CSS.tortoise : CSS.label;
+      ctx.font = `700 14px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(bit, x + cw / 2, sy + ch / 2 + 1);
+    }
+
+    // Bit index labels
+    ctx.fillStyle = CSS.label;
+    ctx.font = `500 9px ${FONT_MONO}`;
+    ctx.textAlign = 'center';
+    for (let vi = 0; vi < visibleBits; vi++) {
+      const bi = startBit + vi;
+      const x = sx + vi * (cw + gap);
+      ctx.fillText(String(bi), x + cw / 2, sy + ch + 12);
+    }
+
+    // Previous binary (faded) for comparison
+    if (active.prevBinary && !isAnimating) {
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = CSS.label;
+      ctx.font = `600 11px ${FONT_SANS}`;
+      ctx.textAlign = 'left';
+      ctx.fillText('prev:', 16, sy - 20);
+      ctx.font = `700 11px ${FONT_MONO}`;
+      for (let vi = 0; vi < visibleBits; vi++) {
+        const bi = startBit + vi;
+        const x = sx + vi * (cw + gap);
+        const pBit = active.prevBinary[bi];
+        ctx.fillStyle = pBit === '1' ? CSS.tortoise : CSS.label;
+        ctx.fillText(pBit, x + cw / 2, sy - 20);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Animated "zap" effect on cleared bit
+    if (isAnimating && toSnapshot.cleared != null) {
+      const clearedVi = toSnapshot.cleared - startBit;
+      if (clearedVi >= 0 && clearedVi < visibleBits) {
+        const cx = sx + clearedVi * (cw + gap) + cw / 2;
+        const cy = sy + ch / 2;
+        const r = lerp(cw * 0.4, cw * 1.2, easeOutCubic(progress));
+        ctx.globalAlpha = 1 - easeOutCubic(progress);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = CSS.hare;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  createSnapshotVisualization({
+    canvasId: 'hammingCanvas', statusId: 'hammingStatus',
+    prevId: 'hammingPrev', nextId: 'hammingNext', resetId: 'hammingReset',
+    buildSnapshots, draw, animationMs: 700,
+    rebuildSnapshotsOnReset: true,
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Reverse bits — 32-bit (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function initReverseBitsVisualization() {
+  const BITS = 32;
+
+  function randomN() {
+    // 8-16 bit numbers for a clear visualization
+    return getRandomIntInclusive(3, 65535);
+  }
+
+  function toBin(v) {
+    return (v >>> 0).toString(2).padStart(BITS, '0');
+  }
+
+  function buildSnapshots() {
+    const original = randomN();
+    let n = original;
+    let res = 0;
+    const snaps = [];
+
+    snaps.push({
+      iteration: 0, n, res, original,
+      nBin: toBin(n), resBin: toBin(res),
+      extractedBit: null, bitIndex: null,
+      text: `n = ${original}. Result = 0. Will process all 32 bits.`,
+    });
+
+    // Only show meaningful iterations (until n becomes 0, then final)
+    // But the algorithm processes all 32 bits — we'll show abbreviated
+    const totalIter = BITS;
+    for (let i = 0; i < totalIter; i++) {
+      const bit = n & 1;
+      res = (res << 1) | bit;
+      // Use unsigned right shift to make res unsigned
+      const resUnsigned = res >>> 0;
+      n = n >>> 1;
+
+      // Skip boring iterations (bit=0 and n=0) after all bits extracted
+      // but always show the first few and the last
+      if (i > 0 && bit === 0 && n === 0 && i < totalIter - 1) continue;
+
+      snaps.push({
+        iteration: i + 1, n, res: resUnsigned, original,
+        nBin: toBin(n), resBin: toBin(resUnsigned),
+        extractedBit: bit, bitIndex: i,
+        text: `Iter ${i + 1}: extract bit ${bit} → result = (result << 1) | ${bit}. n >>= 1.`,
+      });
+    }
+
+    const finalRes = snaps[snaps.length - 1].res;
+    snaps.push({
+      iteration: totalIter, n: 0, res: finalRes, original,
+      nBin: toBin(0), resBin: toBin(finalRes),
+      extractedBit: null, bitIndex: null,
+      text: `Done. reverseBits(${original}) = ${finalRes}.`,
+    });
+    return snaps;
+  }
+
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    const active = isAnimating ? toSnapshot : snapshot;
+
+    // Header
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`original = ${active.original}`, 16, 18);
+    if (active.extractedBit != null) {
+      ctx.fillText(`extracted bit: ${active.extractedBit}`, 16, 38);
+    }
+
+    // Show only meaningful range (last 16 bits)
+    const showBits = 16;
+    const startBit = BITS - showBits;
+
+    const mx = 16;
+    const gap = 2;
+    const maxCw = 24;
+    const cw = Math.max(12, Math.min(maxCw, Math.floor((width - mx * 2 - gap * (showBits - 1)) / showBits)));
+    const ch = 32;
+    const total = cw * showBits + gap * (showBits - 1);
+    const sx = Math.max(8, Math.floor((width - total) / 2));
+
+    // n row
+    const nY = Math.max(58, Math.floor(height * 0.22));
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('n', sx - 10, nY + ch / 2);
+
+    const nBin = active.nBin;
+    for (let vi = 0; vi < showBits; vi++) {
+      const bi = startBit + vi;
+      const bit = nBin[bi];
+      const x = sx + vi * (cw + gap);
+
+      let stroke = CSS.node;
+      let lw = 1.5;
+      if (bit === '1') { stroke = CSS.tortoise; lw = 2; }
+
+      // Highlight rightmost bit (bit 31 in display)
+      if (vi === showBits - 1 && active.extractedBit != null) {
+        stroke = CSS.meet;
+        lw = 3;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, nY, cw, ch, 5);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      ctx.fillStyle = bit === '1' ? CSS.tortoise : '#c0c0c0';
+      ctx.font = `700 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(bit, x + cw / 2, nY + ch / 2 + 1);
+    }
+
+    // Arrow between rows
+    const arrowY = nY + ch + 10;
+    if (active.extractedBit != null) {
+      const fromX = sx + (showBits - 1) * (cw + gap) + cw / 2;
+      const toX = sx + (showBits - 1) * (cw + gap) + cw / 2;
+
+      let arrowProgress = isAnimating ? easeInOutCubic(progress) : 1;
+      const midY = lerp(arrowY, arrowY + 20, arrowProgress);
+
+      ctx.strokeStyle = CSS.meet;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(fromX, arrowY);
+      ctx.lineTo(toX, midY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Extracted bit badge
+      ctx.beginPath();
+      ctx.arc(toX, midY + 10, 12, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = CSS.meet;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.fillStyle = CSS.meet;
+      ctx.font = `700 13px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(active.extractedBit), toX, midY + 11);
+    }
+
+    // Result row
+    const resY = Math.max(nY + ch + 56, Math.floor(height * 0.58));
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('res', sx - 10, resY + ch / 2);
+
+    const resBin = active.resBin;
+    for (let vi = 0; vi < showBits; vi++) {
+      const bi = startBit + vi;
+      const bit = resBin[bi];
+      const x = sx + vi * (cw + gap);
+
+      let stroke = CSS.node;
+      let lw = 1.5;
+      if (bit === '1') { stroke = CSS.tortoise; lw = 2; }
+
+      // Highlight the most recently placed bit (rightmost 1 in result)
+      if (vi === showBits - 1 && active.extractedBit != null && active.extractedBit === 1) {
+        stroke = CSS.hare;
+        lw = 3;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(x, resY, cw, ch, 5);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      ctx.fillStyle = bit === '1' ? CSS.tortoise : '#c0c0c0';
+      ctx.font = `700 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(bit, x + cw / 2, resY + ch / 2 + 1);
+    }
+
+    // Shift animation: show bits sliding left in result
+    if (isAnimating && toSnapshot.extractedBit != null) {
+      const shiftAmount = lerp(0, cw + gap, easeInOutCubic(progress));
+      ctx.globalAlpha = 0.25;
+      ctx.strokeStyle = CSS.meet;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      for (let vi = 1; vi < showBits; vi++) {
+        const x = sx + vi * (cw + gap) - shiftAmount;
+        ctx.beginPath();
+        ctx.moveTo(x + cw / 2, resY - 3);
+        ctx.lineTo(x + cw / 2 - 6, resY - 8);
+        ctx.moveTo(x + cw / 2, resY - 3);
+        ctx.lineTo(x + cw / 2 + 6, resY - 8);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
+    // Decimal values at the bottom
+    const bottomY = Math.min(height - 14, resY + ch + 22);
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 12px ${FONT_SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`n = ${active.n}`, width * 0.3, bottomY);
+    ctx.fillText(`result = ${active.res}`, width * 0.7, bottomY);
+  }
+
+  createSnapshotVisualization({
+    canvasId: 'reverseBitsCanvas', statusId: 'reverseBitsStatus',
+    prevId: 'reverseBitsPrev', nextId: 'reverseBitsNext', resetId: 'reverseBitsReset',
+    buildSnapshots, draw, animationMs: 650,
+    rebuildSnapshotsOnReset: true,
+  });
+}
+
 /* ───── Bootstrap ────────────────────────────────────────────────── */
 
 function init() {
@@ -2053,6 +2455,8 @@ function init() {
   initSqrtBinarySearchVisualization();
   initMajorityElementVisualization();
   initExcelTitleNumberVisualization();
+  initHammingWeightVisualization();
+  initReverseBitsVisualization();
 }
 
 init();

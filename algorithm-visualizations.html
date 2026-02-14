@@ -320,6 +320,68 @@
           aria-atomic="true"
         ></div>
       </section>
+
+      <header class="page-header">
+        <h2>Number of 1 bits (Hamming weight)</h2>
+        <p class="muted">
+          Count set bits by repeatedly clearing the <strong>least significant 1-bit</strong>
+          with the magic step <strong>n &amp;= (n - 1)</strong>.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Hamming weight visualization">
+        <canvas
+          id="hammingCanvas"
+          class="viz-canvas viz-canvas-algo"
+          role="img"
+          aria-label="Number of 1 bits Hamming weight visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="Hamming weight controls">
+          <button id="hammingPrev" type="button" class="btn">Prev</button>
+          <button id="hammingNext" type="button" class="btn btn-primary">Next</button>
+          <button id="hammingReset" type="button" class="btn">Reset (new random n)</button>
+        </div>
+
+        <div
+          id="hammingStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
+
+      <header class="page-header">
+        <h2>Reverse bits (32-bit)</h2>
+        <p class="muted">
+          Reverse the bits of a 32-bit unsigned integer by shifting <strong>result left</strong>
+          and extracting the <strong>rightmost bit</strong> of n each iteration.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Reverse bits visualization">
+        <canvas
+          id="reverseBitsCanvas"
+          class="viz-canvas viz-canvas-algo"
+          role="img"
+          aria-label="Reverse bits 32-bit visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="Reverse bits controls">
+          <button id="reverseBitsPrev" type="button" class="btn">Prev</button>
+          <button id="reverseBitsNext" type="button" class="btn btn-primary">Next</button>
+          <button id="reverseBitsReset" type="button" class="btn">Reset (new random n)</button>
+        </div>
+
+        <div
+          id="reverseBitsStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
     </main>
 
     <footer class="site-footer">
