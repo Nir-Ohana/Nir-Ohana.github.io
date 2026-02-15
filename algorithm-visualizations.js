@@ -2445,6 +2445,42 @@ function initReverseBitsVisualization() {
 
 /* ───── Bootstrap ────────────────────────────────────────────────── */
 
+function initAnimationPicker() {
+  const picker = document.getElementById('animationPicker');
+  const items = Array.from(document.querySelectorAll('.algo-item[data-animation]'));
+  if (!picker || items.length === 0) return;
+
+  const reduceMotion = getReducedMotion();
+  const available = new Set(items.map((item) => item.dataset.animation).filter(Boolean));
+
+  if (!available.has(picker.value)) {
+    picker.value = items[0].dataset.animation || '';
+  }
+
+  function applySelection({ scrollIntoView = false } = {}) {
+    const selected = picker.value;
+    let selectedItem = null;
+
+    for (const item of items) {
+      const isMatch = item.dataset.animation === selected;
+      item.hidden = !isMatch;
+      if (isMatch) selectedItem = item;
+    }
+
+    if (scrollIntoView && selectedItem) {
+      selectedItem.scrollIntoView({
+        behavior: reduceMotion ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    }
+
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  picker.addEventListener('change', () => applySelection({ scrollIntoView: true }));
+  applySelection();
+}
+
 function init() {
   initFloydVisualization();
   initTreeTraversalVisualization();
@@ -2457,6 +2493,7 @@ function init() {
   initExcelTitleNumberVisualization();
   initHammingWeightVisualization();
   initReverseBitsVisualization();
+  initAnimationPicker();
 }
 
 init();

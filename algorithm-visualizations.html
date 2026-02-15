@@ -67,6 +67,50 @@
 
     <main id="content" class="container">
       <header class="page-header">
+        <h2>Explore by topic</h2>
+        <p class="muted">Choose an animation to focus on a single topic.</p>
+      </header>
+
+      <section class="panel algo-picker" aria-label="Animation selection">
+        <div class="algo-picker-row">
+          <label class="small" for="animationPicker">Animation</label>
+          <select id="animationPicker" class="input input-compact algo-picker-select">
+            <optgroup label="Linked structures">
+              <option value="floyd">Floyd’s cycle detection (Tortoise &amp; Hare)</option>
+            </optgroup>
+            <optgroup label="Tree &amp; hashing">
+              <option value="tree">Binary tree traversals</option>
+              <option value="hash">Hash table construction (10 buckets)</option>
+            </optgroup>
+            <optgroup label="Dynamic programming">
+              <option value="fibonacci">Fibonacci (dynamic programming)</option>
+            </optgroup>
+            <optgroup label="Two pointers &amp; merge">
+              <option value="merge-lists">Merge two sorted lists</option>
+              <option value="merge-array">Merge sorted array (from the back)</option>
+            </optgroup>
+            <optgroup label="Search">
+              <option value="sqrt">Square root (binary search)</option>
+            </optgroup>
+            <optgroup label="Voting &amp; encoding">
+              <option value="majority">Majority element (Boyer-Moore voting)</option>
+              <option value="excel">Excel column title to number (base-26)</option>
+            </optgroup>
+            <optgroup label="Bit manipulation">
+              <option value="hamming">Number of 1 bits (Hamming weight)</option>
+              <option value="reverse-bits">Reverse bits (32-bit)</option>
+            </optgroup>
+          </select>
+        </div>
+      </section>
+
+      <article
+        class="algo-item"
+        data-topic="Linked structures"
+        data-animation="floyd"
+        data-animation-label="Floyd’s cycle detection (Tortoise &amp; Hare)"
+      >
+        <header class="page-header">
         <h2>Floyd’s cycle detection (Tortoise &amp; Hare)</h2>
         <p class="muted">
           Two pointers traverse a linked list: the
@@ -85,7 +129,14 @@
         ></canvas>
         <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Tree &amp; hashing"
+        data-animation="tree"
+        data-animation-label="Binary tree traversals"
+      >
       <header class="page-header">
         <h2>Binary tree traversals</h2>
         <p class="muted">
@@ -122,7 +173,14 @@
           aria-atomic="true"
         ></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Tree &amp; hashing"
+        data-animation="hash"
+        data-animation-label="Hash table construction (10 buckets)"
+      >
       <header class="page-header">
         <h2>Hash table construction (10 buckets)</h2>
         <p class="muted">
@@ -147,7 +205,14 @@
 
         <div id="hashStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Dynamic programming"
+        data-animation="fibonacci"
+        data-animation-label="Fibonacci (dynamic programming)"
+      >
       <header class="page-header">
         <h2>Fibonacci (dynamic programming)</h2>
         <p class="muted">
@@ -172,7 +237,14 @@
 
         <div id="fibStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Two pointers &amp; merge"
+        data-animation="merge-lists"
+        data-animation-label="Merge two sorted lists"
+      >
       <header class="page-header">
         <h2>Merge two sorted lists</h2>
         <p class="muted">
@@ -202,7 +274,14 @@
           aria-atomic="true"
         ></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Two pointers &amp; merge"
+        data-animation="merge-array"
+        data-animation-label="Merge sorted array (from the back)"
+      >
       <header class="page-header">
         <h2>Merge sorted array (from the back)</h2>
         <p class="muted">
@@ -233,7 +312,14 @@
           aria-atomic="true"
         ></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Search"
+        data-animation="sqrt"
+        data-animation-label="Square root (binary search)"
+      >
       <header class="page-header">
         <h2>Square root (binary search)</h2>
         <p class="muted">
@@ -257,7 +343,14 @@
 
         <div id="sqrtStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Voting &amp; encoding"
+        data-animation="majority"
+        data-animation-label="Majority element (Boyer-Moore voting)"
+      >
       <header class="page-header">
         <h2>Majority element (Boyer-Moore voting)</h2>
         <p class="muted">
@@ -288,7 +381,14 @@
           aria-atomic="true"
         ></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Voting &amp; encoding"
+        data-animation="excel"
+        data-animation-label="Excel column title to number (base-26)"
+      >
       <header class="page-header">
         <h2>Excel column title to number (base-26)</h2>
         <p class="muted">
@@ -320,7 +420,14 @@
           aria-atomic="true"
         ></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Bit manipulation"
+        data-animation="hamming"
+        data-animation-label="Number of 1 bits (Hamming weight)"
+      >
       <header class="page-header">
         <h2>Number of 1 bits (Hamming weight)</h2>
         <p class="muted">
@@ -351,7 +458,14 @@
           aria-atomic="true"
         ></div>
       </section>
+      </article>
 
+      <article
+        class="algo-item"
+        data-topic="Bit manipulation"
+        data-animation="reverse-bits"
+        data-animation-label="Reverse bits (32-bit)"
+      >
       <header class="page-header">
         <h2>Reverse bits (32-bit)</h2>
         <p class="muted">
@@ -382,6 +496,7 @@
           aria-atomic="true"
         ></div>
       </section>
+      </article>
     </main>
 
     <footer class="site-footer">
