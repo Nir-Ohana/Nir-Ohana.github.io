@@ -89,6 +89,9 @@
               <option value="merge-lists">Merge two sorted lists</option>
               <option value="merge-array">Merge sorted array (from the back)</option>
             </optgroup>
+            <optgroup label="Sliding window">
+              <option value="moving-average">Moving average from data stream</option>
+            </optgroup>
             <optgroup label="Search">
               <option value="sqrt">Square root (binary search)</option>
             </optgroup>
@@ -306,6 +309,44 @@
 
         <div
           id="mergeArrayStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
+      </article>
+
+      <article
+        class="algo-item"
+        data-topic="Sliding window"
+        data-animation="moving-average"
+        data-animation-label="Moving average from data stream"
+      >
+      <header class="page-header">
+        <h2>Moving average from data stream</h2>
+        <p class="muted">
+          Maintain a fixed-size window (<strong>size = 3</strong>) over stream values
+          <strong>[1, 10, 3, 5]</strong> and update the running sum in O(1).
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Moving average visualization">
+        <canvas
+          id="movingAvgCanvas"
+          class="viz-canvas viz-canvas-algo"
+          role="img"
+          aria-label="Moving average from data stream sliding window visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="Moving average controls">
+          <button id="movingAvgPrev" type="button" class="btn">Prev</button>
+          <button id="movingAvgNext" type="button" class="btn btn-primary">Next</button>
+          <button id="movingAvgReset" type="button" class="btn">Reset</button>
+        </div>
+
+        <div
+          id="movingAvgStatus"
           class="status"
           role="status"
           aria-live="polite"

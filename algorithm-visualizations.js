@@ -1411,6 +1411,189 @@ function initMergeArrayVisualization() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   Moving average from data stream — sliding window (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function initMovingAverageVisualization() {
+  const windowSize = 3;
+  const stream = [1, 10, 3, 5];
+
+  function formatAvg(value) {
+    if (value == null) return '-';
+    if (Number.isInteger(value)) return `${value.toFixed(1)}`;
+    return value.toFixed(5).replace(/0+$/, '').replace(/\.$/, '');
+  }
+
+  function buildSnapshots() {
+    const snaps = [];
+    const queue = [];
+    let sum = 0;
+
+    snaps.push({
+      streamIndex: -1,
+      incoming: null,
+      removed: null,
+      queue: [],
+      slot: null,
+      sum: 0,
+      avg: null,
+      text: `Start. Window size is ${windowSize}; values will stream in left to right.`,
+    });
+
+    for (let i = 0; i < stream.length; i++) {
+      const incoming = stream[i];
+      let removed = null;
+
+      if (queue.length === windowSize) {
+        removed = queue.shift();
+        sum -= removed;
+      }
+
+      queue.push(incoming);
+      sum += incoming;
+      const avg = sum / queue.length;
+
+      const queueText = `[${queue.join(', ')}]`;
+      const removeText = removed == null ? '' : ` remove ${removed},`;
+      snaps.push({
+        streamIndex: i,
+        incoming,
+        removed,
+        queue: [...queue],
+        slot: queue.length - 1,
+        sum,
+        avg,
+        text: `Read ${incoming}:${removeText} sum=${sum}, window=${queueText}, avg=${formatAvg(avg)}.`,
+      });
+    }
+
+    const last = snaps[snaps.length - 1];
+    snaps.push({
+      ...last,
+      incoming: null,
+      removed: null,
+      slot: null,
+      text: `Done. Final window [${last.queue.join(', ')}], average=${formatAvg(last.avg)}.`,
+    });
+
+    return snaps;
+  }
+
+  function drawCell(ctx, x, y, w, h, value, { stroke, lineWidth = 2, label = null } = {}) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 10);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = stroke || CSS.node;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 16px ${FONT_MONO}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(value == null ? '-' : String(value), x + w / 2, y + h / 2 + 1);
+
+    if (label) {
+      ctx.fillStyle = CSS.label;
+      ctx.font = `600 11px ${FONT_SANS}`;
+      ctx.fillText(label, x + w / 2, y - 10);
+    }
+  }
+
+  function layoutRow(width, count, y) {
+    const mx = 32;
+    const gap = 12;
+    const cw = Math.max(48, Math.floor((width - mx * 2 - gap * (count - 1)) / count));
+    const ch = 52;
+    const total = cw * count + gap * (count - 1);
+    const sx = Math.max(14, Math.floor((width - total) / 2));
+    return { sx, y, cw, ch, gap, count };
+  }
+
+  function cellCenter(row, index) {
+    return {
+      x: row.sx + index * (row.cw + row.gap) + row.cw / 2,
+      y: row.y + row.ch / 2,
+    };
+  }
+
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    const active = isAnimating ? toSnapshot : snapshot;
+    const streamRow = layoutRow(width, stream.length, 42);
+    const winRow = layoutRow(width, windowSize, Math.max(126, Math.floor(height * 0.45)));
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Stream', 12, streamRow.y + streamRow.ch / 2);
+    ctx.fillText(`Window (size=${windowSize})`, 12, winRow.y + winRow.ch / 2);
+
+    for (let i = 0; i < stream.length; i++) {
+      const x = streamRow.sx + i * (streamRow.cw + streamRow.gap);
+      const seen = i <= active.streamIndex;
+      const isCurrent = i === active.streamIndex;
+      drawCell(ctx, x, streamRow.y, streamRow.cw, streamRow.ch, stream[i], {
+        stroke: isCurrent ? CSS.meet : (seen ? CSS.tortoise : CSS.node),
+        lineWidth: isCurrent ? 3 : 2,
+      });
+    }
+
+    const q = active.queue;
+    for (let i = 0; i < windowSize; i++) {
+      const x = winRow.sx + i * (winRow.cw + winRow.gap);
+      drawCell(ctx, x, winRow.y, winRow.cw, winRow.ch, q[i] ?? null, {
+        stroke: i < q.length ? CSS.hare : CSS.node,
+        lineWidth: i < q.length ? 2.5 : 2,
+        label: i === 0 ? 'oldest' : (i === windowSize - 1 ? 'newest' : null),
+      });
+    }
+
+    if (isAnimating && toSnapshot.incoming != null && toSnapshot.slot != null && toSnapshot.streamIndex >= 0) {
+      const from = cellCenter(streamRow, toSnapshot.streamIndex);
+      const to = cellCenter(winRow, toSnapshot.slot);
+      const t = easeOutCubic(progress);
+      const x = lerp(from.x, to.x, t);
+      const y = lerp(from.y, to.y, t) - Math.sin(t * Math.PI) * 26;
+
+      ctx.beginPath();
+      ctx.arc(x, y, 13, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = CSS.meet;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.fillStyle = CSS.label;
+      ctx.font = `700 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(toSnapshot.incoming), x, y + 1);
+    }
+
+    const bottomY = Math.min(height - 18, winRow.y + winRow.ch + 46);
+    const avgText = formatAvg(active.avg);
+    const sumText = `sum = ${active.sum}`;
+    const avgFormula = active.avg == null
+      ? 'average = -'
+      : `average = ${active.sum} / ${Math.max(active.queue.length, 1)} = ${avgText}`;
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(sumText, 16, bottomY);
+    ctx.fillText(avgFormula, 16, bottomY + 20);
+  }
+
+  createSnapshotVisualization({
+    canvasId: 'movingAvgCanvas', statusId: 'movingAvgStatus',
+    prevId: 'movingAvgPrev', nextId: 'movingAvgNext', resetId: 'movingAvgReset',
+    buildSnapshots, draw, animationMs: 650,
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    Square root — binary search (snapshot framework)
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -2488,6 +2671,7 @@ function init() {
   initFibonacciVisualization();
   initMergeListsVisualization();
   initMergeArrayVisualization();
+  initMovingAverageVisualization();
   initSqrtBinarySearchVisualization();
   initMajorityElementVisualization();
   initExcelTitleNumberVisualization();
