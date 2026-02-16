@@ -1416,7 +1416,7 @@ function initMergeArrayVisualization() {
 
 function initMovingAverageVisualization() {
   const windowSize = 3;
-  const stream = [1, 10, 3, 5];
+  const stream = [1, 10, 3, 5, 8, 2, 6, 4, 7];
 
   function formatAvg(value) {
     if (value == null) return '-';
@@ -1434,7 +1434,9 @@ function initMovingAverageVisualization() {
       incoming: null,
       removed: null,
       queue: [],
-      slot: null,
+      windowStart: null,
+      windowEnd: null,
+      windowLength: 0,
       sum: 0,
       avg: null,
       text: `Start. Window size is ${windowSize}; values will stream in left to right.`,
@@ -1455,12 +1457,16 @@ function initMovingAverageVisualization() {
 
       const queueText = `[${queue.join(', ')}]`;
       const removeText = removed == null ? '' : ` remove ${removed},`;
+      const windowStart = Math.max(0, i - windowSize + 1);
+      const windowEnd = i;
       snaps.push({
         streamIndex: i,
         incoming,
         removed,
         queue: [...queue],
-        slot: queue.length - 1,
+        windowStart,
+        windowEnd,
+        windowLength: queue.length,
         sum,
         avg,
         text: `Read ${incoming}:${removeText} sum=${sum}, window=${queueText}, avg=${formatAvg(avg)}.`,
@@ -1472,7 +1478,6 @@ function initMovingAverageVisualization() {
       ...last,
       incoming: null,
       removed: null,
-      slot: null,
       text: `Done. Final window [${last.queue.join(', ')}], average=${formatAvg(last.avg)}.`,
     });
 
@@ -1518,62 +1523,102 @@ function initMovingAverageVisualization() {
     };
   }
 
+  function drawWindowFrame(ctx, row, start, length, color) {
+    if (start == null || length <= 0) return;
+    const x = row.sx + start * (row.cw + row.gap) - 8;
+    const y = row.y - 10;
+    const width = length * row.cw + Math.max(0, length - 1) * row.gap + 16;
+    const height = row.ch + 20;
+
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 12);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 12);
+    ctx.stroke();
+  }
+
   function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
     const active = isAnimating ? toSnapshot : snapshot;
-    const streamRow = layoutRow(width, stream.length, 42);
-    const winRow = layoutRow(width, windowSize, Math.max(126, Math.floor(height * 0.45)));
+    const streamRow = layoutRow(width, stream.length, Math.max(72, Math.floor(height * 0.3)));
 
     ctx.fillStyle = CSS.label;
     ctx.font = `700 12px ${FONT_SANS}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('Stream', 12, streamRow.y + streamRow.ch / 2);
-    ctx.fillText(`Window (size=${windowSize})`, 12, winRow.y + winRow.ch / 2);
+
+    const fromStart = snapshot.windowStart ?? active.windowStart;
+    const toStart = active.windowStart;
+    const fromLength = snapshot.windowLength ?? active.windowLength;
+    const toLength = active.windowLength;
+    const t = easeInOutCubic(progress);
+    const frameStart = isAnimating ? lerp(fromStart ?? 0, toStart ?? 0, t) : toStart;
+    const frameLength = isAnimating ? lerp(fromLength ?? 0, toLength ?? 0, t) : toLength;
+
+    drawWindowFrame(ctx, streamRow, frameStart, frameLength, CSS.hare);
+
+    if (active.windowStart != null && active.windowLength > 0) {
+      const left = cellCenter(streamRow, active.windowStart).x;
+      const right = cellCenter(streamRow, active.windowEnd).x;
+      const y = streamRow.y - 22;
+      ctx.strokeStyle = CSS.hare;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+      ctx.fillStyle = CSS.hare;
+      ctx.font = `700 11px ${FONT_SANS}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`window size = ${active.windowLength}`, (left + right) / 2, y - 10);
+    }
 
     for (let i = 0; i < stream.length; i++) {
       const x = streamRow.sx + i * (streamRow.cw + streamRow.gap);
       const seen = i <= active.streamIndex;
       const isCurrent = i === active.streamIndex;
+      const inWindow = active.windowStart != null && i >= active.windowStart && i <= active.windowEnd;
       drawCell(ctx, x, streamRow.y, streamRow.cw, streamRow.ch, stream[i], {
-        stroke: isCurrent ? CSS.meet : (seen ? CSS.tortoise : CSS.node),
+        stroke: isCurrent ? CSS.meet : (inWindow ? CSS.hare : (seen ? CSS.tortoise : CSS.node)),
         lineWidth: isCurrent ? 3 : 2,
       });
     }
 
-    const q = active.queue;
-    for (let i = 0; i < windowSize; i++) {
-      const x = winRow.sx + i * (winRow.cw + winRow.gap);
-      drawCell(ctx, x, winRow.y, winRow.cw, winRow.ch, q[i] ?? null, {
-        stroke: i < q.length ? CSS.hare : CSS.node,
-        lineWidth: i < q.length ? 2.5 : 2,
-        label: i === 0 ? 'oldest' : (i === windowSize - 1 ? 'newest' : null),
-      });
-    }
-
-    if (isAnimating && toSnapshot.incoming != null && toSnapshot.slot != null && toSnapshot.streamIndex >= 0) {
+    if (isAnimating && toSnapshot.incoming != null && toSnapshot.streamIndex >= 0) {
       const from = cellCenter(streamRow, toSnapshot.streamIndex);
-      const to = cellCenter(winRow, toSnapshot.slot);
-      const t = easeOutCubic(progress);
-      const x = lerp(from.x, to.x, t);
-      const y = lerp(from.y, to.y, t) - Math.sin(t * Math.PI) * 26;
+      const x = from.x;
+      const y = streamRow.y - 34 - Math.sin(easeOutCubic(progress) * Math.PI) * 10;
 
       ctx.beginPath();
-      ctx.arc(x, y, 13, 0, Math.PI * 2);
+      ctx.arc(x, y, 12, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.strokeStyle = CSS.meet;
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2;
       ctx.stroke();
 
       ctx.fillStyle = CSS.label;
-      ctx.font = `700 12px ${FONT_MONO}`;
+      ctx.font = `700 11px ${FONT_MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(toSnapshot.incoming), x, y + 1);
+
+      ctx.fillStyle = CSS.meet;
+      ctx.font = `700 12px ${FONT_SANS}`;
+      ctx.fillText('incoming', x, y - 16);
     }
 
-    const bottomY = Math.min(height - 18, winRow.y + winRow.ch + 46);
+    const bottomY = Math.min(height - 22, streamRow.y + streamRow.ch + 92);
     const avgText = formatAvg(active.avg);
+    const windowText = active.queue.length > 0 ? `[${active.queue.join(', ')}]` : '-';
     const sumText = `sum = ${active.sum}`;
     const avgFormula = active.avg == null
       ? 'average = -'
@@ -1582,6 +1627,7 @@ function initMovingAverageVisualization() {
     ctx.fillStyle = CSS.label;
     ctx.font = `600 13px ${FONT_SANS}`;
     ctx.textAlign = 'left';
+    ctx.fillText(`current window = ${windowText}`, 16, bottomY - 20);
     ctx.fillText(sumText, 16, bottomY);
     ctx.fillText(avgFormula, 16, bottomY + 20);
   }
