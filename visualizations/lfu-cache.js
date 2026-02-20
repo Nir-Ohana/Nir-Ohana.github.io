@@ -458,7 +458,7 @@ export default function initLFUCacheVisualization() {
   createSnapshotVisualization({
     canvasId: 'lfuCanvas', statusId: 'lfuStatus',
     prevId: 'lfuPrev', nextId: 'lfuNext', resetId: 'lfuReset',
-    buildSnapshots, draw, animationMs: 680,
+    buildSnapshots, draw, animationMs: 1200,
     rebuildSnapshotsOnReset: true,
   });
 }

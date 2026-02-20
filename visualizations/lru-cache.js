@@ -393,7 +393,7 @@ export default function initLRUCacheVisualization() {
   createSnapshotVisualization({
     canvasId: 'lruCanvas', statusId: 'lruStatus',
     prevId: 'lruPrev', nextId: 'lruNext', resetId: 'lruReset',
-    buildSnapshots, draw, animationMs: 680,
+    buildSnapshots, draw, animationMs: 1200,
     rebuildSnapshotsOnReset: true,
   });
 }
