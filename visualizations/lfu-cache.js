@@ -179,6 +179,39 @@ export default function initLFUCacheVisualization() {
     ctx.fillText(String(label), x + w / 2, y + h / 2 + 1);
   }
 
+  function drawHorizontalArrow(ctx, x1, x2, y, color) {
+    if (Math.abs(x2 - x1) < 1) return;
+    const tipLen = 5;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x1, y);
+    ctx.lineTo(x2, y);
+    ctx.stroke();
+
+    if (x2 > x1) {
+      ctx.beginPath();
+      ctx.moveTo(x2, y);
+      ctx.lineTo(x2 - tipLen, y - 3);
+      ctx.lineTo(x2 - tipLen, y + 3);
+      ctx.closePath();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x2, y);
+      ctx.lineTo(x2 + tipLen, y - 3);
+      ctx.lineTo(x2 + tipLen, y + 3);
+      ctx.closePath();
+    }
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function drawBidirectionalLink(ctx, leftX, rightX, y, color) {
+    const lane = 3;
+    drawHorizontalArrow(ctx, leftX, rightX, y - lane, color);
+    drawHorizontalArrow(ctx, rightX, leftX, y + lane, color);
+  }
+
   function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
     if (width < 10 || height < 10) return;
     const active = isAnimating ? toSnapshot : snapshot;
@@ -213,11 +246,14 @@ export default function initLFUCacheVisualization() {
     ctx.fillText('Frequency Buckets (oldest → newest)', bucketsX, bucketsTopY - 8);
 
     const buckets = active.buckets;
-    const bucketRowH = 44;
+    const bucketRowH = 54;
     const bucketGap = 10;
     const chipW = 40;
     const chipH = 30;
-    const chipGap = 6;
+    const chipGap = 8;
+    const sentinelW = 28;
+    const sentinelH = 24;
+    const listStartX = bucketsX + 72;
 
     if (buckets.length === 0) {
       ctx.fillStyle = CSS.edge;
@@ -254,15 +290,44 @@ export default function initLFUCacheVisualization() {
       ctx.textBaseline = 'middle';
       ctx.fillText(`freq=${bucket.freq}`, bucketsX + 6, by + bucketRowH / 2);
 
-      const chipStartX = bucketsX + 72;
+      const cy = by + (bucketRowH - chipH) / 2;
+      const centerY = by + bucketRowH / 2;
+      const headX = listStartX;
+      const firstNodeX = headX + sentinelW + chipGap;
+
+      drawChip(ctx, headX, by + (bucketRowH - sentinelH) / 2, sentinelW, sentinelH, 'H', {
+        stroke: CSS.edge,
+        lw: 1.6,
+      });
+
       for (let ki = 0; ki < bucket.keys.length; ki++) {
-        const cx = chipStartX + ki * (chipW + chipGap);
+        const cx = firstNodeX + ki * (chipW + chipGap);
         const isActive = active.activeKey != null && bucket.keys[ki] === active.activeKey;
-        drawChip(ctx, cx, by + (bucketRowH - chipH) / 2, chipW, chipH,
+        drawChip(ctx, cx, cy, chipW, chipH,
           `k:${bucket.keys[ki]}`, {
             stroke: isActive ? CSS.meet : CSS.tortoise,
             lw: isActive ? 3 : 2,
           });
+      }
+
+      const tailX = firstNodeX + bucket.keys.length * (chipW + chipGap);
+      drawChip(ctx, tailX, by + (bucketRowH - sentinelH) / 2, sentinelW, sentinelH, 'T', {
+        stroke: CSS.edge,
+        lw: 1.6,
+      });
+
+      const linkColor = isMin ? CSS.meet : CSS.edge;
+      if (bucket.keys.length === 0) {
+        drawBidirectionalLink(ctx, headX + sentinelW, tailX, centerY, linkColor);
+      } else {
+        drawBidirectionalLink(ctx, headX + sentinelW, firstNodeX, centerY, linkColor);
+        for (let ki = 0; ki < bucket.keys.length - 1; ki++) {
+          const leftNodeRight = firstNodeX + ki * (chipW + chipGap) + chipW;
+          const rightNodeLeft = firstNodeX + (ki + 1) * (chipW + chipGap);
+          drawBidirectionalLink(ctx, leftNodeRight, rightNodeLeft, centerY, linkColor);
+        }
+        const lastNodeRight = firstNodeX + (bucket.keys.length - 1) * (chipW + chipGap) + chipW;
+        drawBidirectionalLink(ctx, lastNodeRight, tailX, centerY, linkColor);
       }
     }
 

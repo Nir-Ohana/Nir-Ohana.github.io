@@ -32,7 +32,7 @@ export default function initLRUCacheVisualization() {
   }
 
   function buildSnapshots() {
-    const capacity = getRandomIntInclusive(2, 4);
+    const capacity = 5;
     const ops = generateOps(capacity);
 
     let idCounter = 0;
