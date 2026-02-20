@@ -2672,6 +2672,878 @@ function initReverseBitsVisualization() {
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Number of recent calls — RecentCounter (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function initRecentCounterVisualization() {
+  function generatePings() {
+    const count = getRandomIntInclusive(16, 20);
+    const pings = [];
+    let t = getRandomIntInclusive(1, 200);
+    for (let i = 0; i < count; i++) {
+      pings.push(t);
+      t += getRandomIntInclusive(200, 1800);
+    }
+    return pings;
+  }
+
+  function buildSnapshots() {
+    const pings = generatePings();
+    const snaps = [];
+    const queue = [];
+
+    snaps.push({
+      pings,
+      pingIdx: -1,
+      incoming: null,
+      removed: [],
+      queue: [],
+      windowStart: null,
+      windowEnd: null,
+      count: 0,
+      text: `Start. Each ping(t) returns the number of pings in [t - 3000, t].`,
+    });
+
+    for (let i = 0; i < pings.length; i++) {
+      const t = pings[i];
+      const removed = [];
+      queue.push(t);
+      while (queue.length > 0 && queue[0] < t - 3000) {
+        removed.push(queue.shift());
+      }
+
+      const removeText = removed.length > 0
+        ? ` Removed ${removed.length} old ping${removed.length > 1 ? 's' : ''}.`
+        : '';
+
+      snaps.push({
+        pings,
+        pingIdx: i,
+        incoming: t,
+        removed,
+        queue: [...queue],
+        windowStart: t - 3000,
+        windowEnd: t,
+        count: queue.length,
+        text: `ping(${t}): window [${t - 3000}, ${t}], count = ${queue.length}.${removeText}`,
+      });
+    }
+
+    const last = snaps[snaps.length - 1];
+    snaps.push({
+      ...last,
+      incoming: null,
+      removed: [],
+      text: `Done. Last count = ${last.count}. Reset for a new random sequence.`,
+    });
+
+    return snaps;
+  }
+
+  function drawCell(ctx, x, y, w, h, value, { stroke, lineWidth = 2 } = {}) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 8);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = stroke || CSS.node;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 11px ${FONT_MONO}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(value), x + w / 2, y + h / 2 + 1);
+  }
+
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    if (width < 10 || height < 10) return;
+    const active = isAnimating ? toSnapshot : snapshot;
+    const pings = active.pings;
+    const slots = pings.length;
+
+    /* Layout */
+    const mx = 18;
+    const gap = 4;
+    const cw = Math.max(28, Math.floor((width - mx * 2 - gap * (slots - 1)) / slots));
+    const ch = 38;
+    const rw = cw * slots + gap * (slots - 1);
+    const sx = Math.max(10, Math.floor((width - rw) / 2));
+    const rowY = Math.max(70, Math.floor(height * 0.32));
+
+    /* Header info */
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('All pings', sx, rowY - 14);
+
+    /* Window highlight frame */
+    if (active.windowStart != null && active.queue.length > 0) {
+      let firstInWindow = -1;
+      let lastInWindow = -1;
+      for (let i = 0; i < slots; i++) {
+        if (pings[i] >= active.windowStart && pings[i] <= active.windowEnd) {
+          if (firstInWindow < 0) firstInWindow = i;
+          lastInWindow = i;
+        }
+      }
+      if (firstInWindow >= 0) {
+        const fx = sx + firstInWindow * (cw + gap) - 4;
+        const fw = (lastInWindow - firstInWindow + 1) * cw +
+          Math.max(0, lastInWindow - firstInWindow) * gap + 8;
+        ctx.save();
+        ctx.globalAlpha = 0.10;
+        ctx.fillStyle = CSS.hare;
+        ctx.beginPath();
+        ctx.roundRect(fx, rowY - 6, fw, ch + 12, 10);
+        ctx.fill();
+        ctx.restore();
+        ctx.strokeStyle = CSS.hare;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(fx, rowY - 6, fw, ch + 12, 10);
+        ctx.stroke();
+
+        ctx.fillStyle = CSS.hare;
+        ctx.font = `700 10px ${FONT_SANS}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(
+          `[${active.windowStart}, ${active.windowEnd}]`,
+          fx + fw / 2,
+          rowY - 18,
+        );
+      }
+    }
+
+    /* Ping cells */
+    for (let i = 0; i < slots; i++) {
+      const x = sx + i * (cw + gap);
+      const isCurrent = i === active.pingIdx;
+      const inQueue = active.queue.includes(pings[i]);
+      const alreadySeen = active.pingIdx >= 0 && i <= active.pingIdx;
+      let stroke = CSS.node;
+      let lw = 2;
+      if (alreadySeen && !inQueue) stroke = CSS.edge;
+      if (inQueue) stroke = CSS.tortoise;
+      if (isCurrent) { stroke = CSS.meet; lw = 3; }
+      drawCell(ctx, x, rowY, cw, ch, pings[i], { stroke, lineWidth: lw });
+    }
+
+    /* Queue row */
+    const queueY = rowY + ch + 50;
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText('Active queue', sx, queueY - 14);
+
+    if (active.queue.length > 0) {
+      const qGap = 6;
+      const qcw = Math.max(34, Math.floor((width - mx * 2 - qGap * (active.queue.length - 1)) / active.queue.length));
+      const qrw = qcw * active.queue.length + qGap * (active.queue.length - 1);
+      const qsx = Math.max(10, Math.floor((width - qrw) / 2));
+      for (let i = 0; i < active.queue.length; i++) {
+        const x = qsx + i * (qcw + qGap);
+        drawCell(ctx, x, queueY, qcw, ch, active.queue[i], { stroke: CSS.tortoise });
+      }
+    } else {
+      ctx.fillStyle = CSS.edge;
+      ctx.font = `600 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('(empty)', width / 2, queueY + ch / 2);
+    }
+
+    /* Bottom summary */
+    const bottomY = Math.min(height - 14, queueY + ch + 28);
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(`count = ${active.count}`, 16, bottomY);
+    if (active.removed.length > 0) {
+      ctx.fillStyle = CSS.hare;
+      ctx.fillText(
+        `removed: ${active.removed.join(', ')}`,
+        160, bottomY,
+      );
+    }
+  }
+
+  createSnapshotVisualization({
+    canvasId: 'recentCallsCanvas', statusId: 'recentCallsStatus',
+    prevId: 'recentCallsPrev', nextId: 'recentCallsNext', resetId: 'recentCallsReset',
+    buildSnapshots, draw, animationMs: 620,
+    rebuildSnapshotsOnReset: true,
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LRU Cache — DLL with dummy head/tail + HashMap (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function initLRUCacheVisualization() {
+  function generateOps(capacity) {
+    const ops = [];
+    const keyRange = capacity + 4;
+    /* Ensure at least capacity+1 distinct puts early so an eviction is shown. */
+    const usedKeys = new Set();
+    for (let i = 0; i < capacity + 2; i++) {
+      let k;
+      do { k = getRandomIntInclusive(1, keyRange); } while (usedKeys.has(k));
+      usedKeys.add(k);
+      ops.push({ type: 'put', key: k, value: getRandomIntInclusive(1, 20) });
+    }
+    const totalOps = getRandomIntInclusive(12, 16);
+    while (ops.length < totalOps) {
+      const k = getRandomIntInclusive(1, keyRange);
+      if (Math.random() < 0.4) {
+        ops.push({ type: 'get', key: k });
+      } else {
+        ops.push({ type: 'put', key: k, value: getRandomIntInclusive(1, 20) });
+      }
+    }
+    return ops;
+  }
+
+  function buildSnapshots() {
+    const capacity = getRandomIntInclusive(2, 4);
+    const ops = generateOps(capacity);
+
+    /* --- Doubly linked list with dummy head & tail + map --- */
+    let idCounter = 0;
+    function makeNode(key, value) {
+      return { id: ++idCounter, key, value, prev: null, next: null };
+    }
+    const head = makeNode('H', '');
+    const tail = makeNode('T', '');
+    head.next = tail;
+    tail.prev = head;
+    const map = new Map();
+
+    function remove(node) {
+      node.prev.next = node.next;
+      node.next.prev = node.prev;
+    }
+    function insertAfterHead(node) {
+      node.next = head.next;
+      node.prev = head;
+      head.next.prev = node;
+      head.next = node;
+    }
+    function listOrder() {
+      const order = [];
+      let cur = head.next;
+      while (cur !== tail) {
+        order.push({ key: cur.key, value: cur.value });
+        cur = cur.next;
+      }
+      return order;
+    }
+    function mapView() {
+      const rows = [];
+      for (const [k, n] of map) rows.push({ key: k, value: n.value });
+      return rows;
+    }
+
+    const snaps = [];
+    snaps.push({
+      capacity,
+      op: null,
+      result: null,
+      evictedKey: null,
+      listOrder: [],
+      mapView: [],
+      activeKey: null,
+      text: `LRU Cache created with capacity = ${capacity}. Dummy head ↔ tail.`,
+    });
+
+    for (let oi = 0; oi < ops.length; oi++) {
+      const op = ops[oi];
+      let result = null;
+      let evictedKey = null;
+
+      if (op.type === 'get') {
+        if (map.has(op.key)) {
+          const node = map.get(op.key);
+          result = node.value;
+          remove(node);
+          insertAfterHead(node);
+        } else {
+          result = -1;
+        }
+      } else {
+        /* put */
+        if (map.has(op.key)) {
+          const node = map.get(op.key);
+          node.value = op.value;
+          remove(node);
+          insertAfterHead(node);
+        } else {
+          if (map.size >= capacity) {
+            const victim = tail.prev;
+            evictedKey = victim.key;
+            remove(victim);
+            map.delete(victim.key);
+          }
+          const node = makeNode(op.key, op.value);
+          insertAfterHead(node);
+          map.set(op.key, node);
+        }
+      }
+
+      const getDesc = result === -1
+        ? `get(${op.key}): miss → -1.`
+        : `get(${op.key}): hit → ${result}, move to front.`;
+      const putDesc = evictedKey != null
+        ? `put(${op.key}, ${op.value}): full → evict key ${evictedKey}, insert at front.`
+        : map.size <= capacity && !evictedKey
+          ? `put(${op.key}, ${op.value}): ${ops.slice(0, oi).some(o => o.key === op.key && o.type === 'put') || snaps.some(s => s.activeKey === op.key) ? 'update' : 'insert'} at front.`
+          : `put(${op.key}, ${op.value}): insert at front.`;
+
+      snaps.push({
+        capacity,
+        op,
+        result,
+        evictedKey,
+        listOrder: listOrder(),
+        mapView: mapView(),
+        activeKey: op.key,
+        text: op.type === 'get' ? getDesc : putDesc,
+      });
+    }
+
+    const last = snaps[snaps.length - 1];
+    snaps.push({
+      ...last,
+      op: null,
+      evictedKey: null,
+      activeKey: null,
+      text: `Done. ${ops.length} operations complete. Reset for a new random sequence.`,
+    });
+
+    return snaps;
+  }
+
+  /* Drawing helpers */
+
+  function drawDLLNode(ctx, x, y, w, h, label, sublabel, { stroke = CSS.node, lw = 2, dimmed = false } = {}) {
+    ctx.save();
+    if (dimmed) ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 10);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lw;
+    ctx.stroke();
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 14px ${FONT_MONO}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(label), x + w / 2, y + h / 2 - (sublabel != null ? 6 : 0));
+
+    if (sublabel != null) {
+      ctx.font = `600 10px ${FONT_SANS}`;
+      ctx.fillText(String(sublabel), x + w / 2, y + h / 2 + 10);
+    }
+    ctx.restore();
+  }
+
+  function drawArrow(ctx, x1, y, x2, color, offsetY) {
+    const tipLen = 5;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x1, y + offsetY);
+    ctx.lineTo(x2, y + offsetY);
+    ctx.stroke();
+    /* arrowhead pointing right */
+    if (x2 > x1) {
+      ctx.beginPath();
+      ctx.moveTo(x2, y + offsetY);
+      ctx.lineTo(x2 - tipLen, y + offsetY - 3);
+      ctx.lineTo(x2 - tipLen, y + offsetY + 3);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x2, y + offsetY);
+      ctx.lineTo(x2 + tipLen, y + offsetY - 3);
+      ctx.lineTo(x2 + tipLen, y + offsetY + 3);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+  }
+
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    if (width < 10 || height < 10) return;
+    const active = isAnimating ? toSnapshot : snapshot;
+
+    /* ---- Operation strip ---- */
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const opStr = active.op
+      ? (active.op.type === 'get'
+        ? `get(${active.op.key})` + (active.result != null ? ` → ${active.result}` : '')
+        : `put(${active.op.key}, ${active.op.value})`)
+      : '—';
+    ctx.fillText(`Operation: ${opStr}`, 16, 22);
+    ctx.fillText(`Capacity: ${active.capacity}`, width - 140, 22);
+
+    if (active.evictedKey != null) {
+      ctx.fillStyle = CSS.hare;
+      ctx.fillText(`Evicted: key ${active.evictedKey}`, 16, 42);
+    }
+
+    /* ---- Doubly linked list (head → ... → tail) ---- */
+    const listY = 72;
+    const nodeW = 52;
+    const nodeH = 44;
+    const listNodes = active.listOrder;
+    const totalNodes = listNodes.length + 2; /* +head +tail */
+    const gap = 28;
+    const totalW = totalNodes * nodeW + (totalNodes - 1) * gap;
+    const listSx = Math.max(10, Math.floor((width - totalW) / 2));
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText('Doubly Linked List (MRU ← → LRU)', 16, listY - 10);
+
+    /* Draw head dummy */
+    drawDLLNode(ctx, listSx, listY, nodeW, nodeH, 'HEAD', null, {
+      stroke: CSS.edge, lw: 2, dimmed: true,
+    });
+
+    /* Draw data nodes */
+    for (let i = 0; i < listNodes.length; i++) {
+      const nx = listSx + (i + 1) * (nodeW + gap);
+      const isActive = active.activeKey != null && listNodes[i].key === active.activeKey;
+      const isEvicted = active.evictedKey != null && listNodes[i].key === active.evictedKey;
+      drawDLLNode(ctx, nx, listY, nodeW, nodeH,
+        `k:${listNodes[i].key}`, `v:${listNodes[i].value}`, {
+          stroke: isEvicted ? CSS.hare : (isActive ? CSS.meet : CSS.tortoise),
+          lw: isActive || isEvicted ? 3 : 2,
+        });
+    }
+
+    /* Draw tail dummy */
+    const tailX = listSx + (listNodes.length + 1) * (nodeW + gap);
+    drawDLLNode(ctx, tailX, listY, nodeW, nodeH, 'TAIL', null, {
+      stroke: CSS.edge, lw: 2, dimmed: true,
+    });
+
+    /* Arrows (bidirectional) */
+    for (let i = 0; i < totalNodes - 1; i++) {
+      const x1 = listSx + i * (nodeW + gap) + nodeW;
+      const x2 = listSx + (i + 1) * (nodeW + gap);
+      const cy = listY + nodeH / 2;
+      drawArrow(ctx, x1 + 2, cy, x2 - 2, CSS.edge, -5);
+      drawArrow(ctx, x2 - 2, cy, x1 + 2, CSS.edge, 5);
+    }
+
+    /* ---- HashMap table ---- */
+    const mapY = listY + nodeH + 60;
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText('HashMap  key → value', 16, mapY - 10);
+
+    const tableX = 16;
+    const colW = Math.min(100, Math.floor((width - 40) / 3));
+    const rowH = 28;
+
+    /* Header row */
+    ctx.fillStyle = CSS.edge;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Key', tableX + colW / 2, mapY + rowH / 2);
+    ctx.fillText('Value', tableX + colW + colW / 2, mapY + rowH / 2);
+
+    ctx.strokeStyle = CSS.edge;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tableX, mapY + rowH);
+    ctx.lineTo(tableX + colW * 2, mapY + rowH);
+    ctx.stroke();
+
+    const mapRows = active.mapView;
+    for (let i = 0; i < mapRows.length; i++) {
+      const ry = mapY + rowH + i * rowH;
+      const isAct = active.activeKey != null && mapRows[i].key === active.activeKey;
+
+      if (isAct) {
+        ctx.save();
+        ctx.globalAlpha = 0.10;
+        ctx.fillStyle = CSS.meet;
+        ctx.fillRect(tableX, ry, colW * 2, rowH);
+        ctx.restore();
+      }
+
+      ctx.fillStyle = CSS.label;
+      ctx.font = `600 13px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(mapRows[i].key), tableX + colW / 2, ry + rowH / 2);
+      ctx.fillText(String(mapRows[i].value), tableX + colW + colW / 2, ry + rowH / 2);
+    }
+
+    if (mapRows.length === 0) {
+      ctx.fillStyle = CSS.edge;
+      ctx.font = `600 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('(empty)', tableX + colW, mapY + rowH + 14);
+    }
+  }
+
+  createSnapshotVisualization({
+    canvasId: 'lruCanvas', statusId: 'lruStatus',
+    prevId: 'lruPrev', nextId: 'lruNext', resetId: 'lruReset',
+    buildSnapshots, draw, animationMs: 680,
+    rebuildSnapshotsOnReset: true,
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LFU Cache — freq buckets + HashMap (snapshot framework)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function initLFUCacheVisualization() {
+  function generateOps(capacity) {
+    const ops = [];
+    const keyRange = capacity + 5;
+    /* Fill cache first, then force at least one eviction. */
+    const usedKeys = new Set();
+    for (let i = 0; i < capacity + 2; i++) {
+      let k;
+      do { k = getRandomIntInclusive(1, keyRange); } while (usedKeys.has(k));
+      usedKeys.add(k);
+      ops.push({ type: 'put', key: k, value: getRandomIntInclusive(1, 20) });
+    }
+    /* Sprinkle some gets to bump frequencies & create ties. */
+    const allKeys = [...usedKeys];
+    for (let i = 0; i < 3; i++) {
+      ops.push({ type: 'get', key: allKeys[getRandomIntInclusive(0, allKeys.length - 1)] });
+    }
+    const totalOps = getRandomIntInclusive(18, 22);
+    while (ops.length < totalOps) {
+      const k = getRandomIntInclusive(1, keyRange);
+      if (Math.random() < 0.35) {
+        ops.push({ type: 'get', key: k });
+      } else {
+        ops.push({ type: 'put', key: k, value: getRandomIntInclusive(1, 20) });
+      }
+    }
+    return ops;
+  }
+
+  function buildSnapshots() {
+    const capacity = getRandomIntInclusive(2, 6);
+    const ops = generateOps(capacity);
+
+    /* --- O(1) LFU simulation with freq → DLL (doubly linked list w/ dummies) --- */
+    const keyNode = new Map();        /* key → { key, value, freq } */
+    const freqKeys = new Map();       /* freq → [keys in LRU order, oldest first] */
+    let minFreq = 0;
+
+    function addToFreq(freq, key) {
+      if (!freqKeys.has(freq)) freqKeys.set(freq, []);
+      freqKeys.get(freq).push(key);
+    }
+    function removeFromFreq(freq, key) {
+      const list = freqKeys.get(freq);
+      if (!list) return;
+      const idx = list.indexOf(key);
+      if (idx >= 0) list.splice(idx, 1);
+      if (list.length === 0) freqKeys.delete(freq);
+    }
+
+    function snapshotBuckets() {
+      const buckets = [];
+      const freqs = [...freqKeys.keys()].sort((a, b) => a - b);
+      for (const f of freqs) {
+        buckets.push({ freq: f, keys: [...freqKeys.get(f)] });
+      }
+      return buckets;
+    }
+    function snapshotMap() {
+      const rows = [];
+      for (const [k, node] of keyNode) {
+        rows.push({ key: k, value: node.value, freq: node.freq });
+      }
+      return rows;
+    }
+
+    const snaps = [];
+    snaps.push({
+      capacity,
+      op: null,
+      result: null,
+      evictedKey: null,
+      minFreq: 0,
+      buckets: [],
+      mapRows: [],
+      activeKey: null,
+      text: `LFU Cache created with capacity = ${capacity}.`,
+    });
+
+    for (let oi = 0; oi < ops.length; oi++) {
+      const op = ops[oi];
+      let result = null;
+      let evictedKey = null;
+
+      if (op.type === 'get') {
+        if (keyNode.has(op.key)) {
+          const node = keyNode.get(op.key);
+          result = node.value;
+          const oldFreq = node.freq;
+          removeFromFreq(oldFreq, op.key);
+          node.freq += 1;
+          addToFreq(node.freq, op.key);
+          if (minFreq === oldFreq && !freqKeys.has(oldFreq)) {
+            minFreq = oldFreq + 1;
+          }
+        } else {
+          result = -1;
+        }
+      } else {
+        /* put */
+        if (capacity <= 0) continue;
+        if (keyNode.has(op.key)) {
+          const node = keyNode.get(op.key);
+          node.value = op.value;
+          const oldFreq = node.freq;
+          removeFromFreq(oldFreq, op.key);
+          node.freq += 1;
+          addToFreq(node.freq, op.key);
+          if (minFreq === oldFreq && !freqKeys.has(oldFreq)) {
+            minFreq = oldFreq + 1;
+          }
+        } else {
+          if (keyNode.size >= capacity) {
+            /* Evict LFU (LRU among ties) */
+            const minList = freqKeys.get(minFreq);
+            const victimKey = minList.shift();
+            if (minList.length === 0) freqKeys.delete(minFreq);
+            keyNode.delete(victimKey);
+            evictedKey = victimKey;
+          }
+          keyNode.set(op.key, { key: op.key, value: op.value, freq: 1 });
+          addToFreq(1, op.key);
+          minFreq = 1;
+        }
+      }
+
+      const getDesc = result === -1
+        ? `get(${op.key}): miss → -1.`
+        : `get(${op.key}): hit → ${result}, freq++.`;
+      const putDesc = evictedKey != null
+        ? `put(${op.key}, ${op.value}): full → evict key ${evictedKey} (minFreq bucket), insert.`
+        : `put(${op.key}, ${op.value}): ${keyNode.has(op.key) && ops.slice(0, oi).some(o => o.key === op.key) ? 'update, freq++' : 'insert, freq=1'}.`;
+
+      snaps.push({
+        capacity,
+        op,
+        result,
+        evictedKey,
+        minFreq,
+        buckets: snapshotBuckets(),
+        mapRows: snapshotMap(),
+        activeKey: op.key,
+        text: op.type === 'get' ? getDesc : putDesc,
+      });
+    }
+
+    const last = snaps[snaps.length - 1];
+    snaps.push({
+      ...last,
+      op: null,
+      evictedKey: null,
+      activeKey: null,
+      text: `Done. ${ops.length} operations complete. Reset for a new random sequence.`,
+    });
+
+    return snaps;
+  }
+
+  /* Drawing helpers */
+
+  function drawChip(ctx, x, y, w, h, label, { stroke = CSS.node, lw = 2 } = {}) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 8);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lw;
+    ctx.stroke();
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_MONO}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(label), x + w / 2, y + h / 2 + 1);
+  }
+
+  function draw(ctx, { width, height, snapshot, toSnapshot, progress, isAnimating }) {
+    if (width < 10 || height < 10) return;
+    const active = isAnimating ? toSnapshot : snapshot;
+
+    /* ---- Operation header ---- */
+    ctx.fillStyle = CSS.label;
+    ctx.font = `600 13px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const opStr = active.op
+      ? (active.op.type === 'get'
+        ? `get(${active.op.key})` + (active.result != null ? ` → ${active.result}` : '')
+        : `put(${active.op.key}, ${active.op.value})`)
+      : '—';
+    ctx.fillText(`Op: ${opStr}`, 16, 20);
+    ctx.fillText(`Capacity: ${active.capacity}`, width - 140, 20);
+    ctx.fillText(`minFreq: ${active.minFreq}`, width / 2 - 40, 20);
+
+    if (active.evictedKey != null) {
+      ctx.fillStyle = CSS.hare;
+      ctx.fillText(`Evicted: key ${active.evictedKey}`, 16, 40);
+    }
+
+    /* ---- Frequency buckets (left ~60%) ---- */
+    const bucketsX = 16;
+    const bucketsW = Math.floor(width * 0.58);
+    const bucketsTopY = 60;
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText('Frequency Buckets (oldest → newest)', bucketsX, bucketsTopY - 8);
+
+    const buckets = active.buckets;
+    const bucketRowH = 44;
+    const bucketGap = 10;
+    const chipW = 40;
+    const chipH = 30;
+    const chipGap = 6;
+
+    if (buckets.length === 0) {
+      ctx.fillStyle = CSS.edge;
+      ctx.font = `600 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('(empty)', bucketsX + bucketsW / 2, bucketsTopY + 20);
+    }
+
+    for (let bi = 0; bi < buckets.length; bi++) {
+      const bucket = buckets[bi];
+      const by = bucketsTopY + bi * (bucketRowH + bucketGap);
+      const isMin = bucket.freq === active.minFreq;
+
+      /* Bucket frame */
+      const frameW = bucketsW - 10;
+      ctx.save();
+      if (isMin) {
+        ctx.globalAlpha = 0.08;
+        ctx.fillStyle = CSS.meet;
+        ctx.beginPath();
+        ctx.roundRect(bucketsX, by, frameW, bucketRowH, 8);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      ctx.strokeStyle = isMin ? CSS.meet : CSS.edge;
+      ctx.lineWidth = isMin ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.roundRect(bucketsX, by, frameW, bucketRowH, 8);
+      ctx.stroke();
+
+      /* Freq label */
+      ctx.fillStyle = isMin ? CSS.meet : CSS.label;
+      ctx.font = `700 11px ${FONT_SANS}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`freq=${bucket.freq}`, bucketsX + 6, by + bucketRowH / 2);
+
+      /* Key chips inside bucket */
+      const chipStartX = bucketsX + 72;
+      for (let ki = 0; ki < bucket.keys.length; ki++) {
+        const cx = chipStartX + ki * (chipW + chipGap);
+        const isActive = active.activeKey != null && bucket.keys[ki] === active.activeKey;
+        drawChip(ctx, cx, by + (bucketRowH - chipH) / 2, chipW, chipH,
+          `k:${bucket.keys[ki]}`, {
+            stroke: isActive ? CSS.meet : CSS.tortoise,
+            lw: isActive ? 3 : 2,
+          });
+      }
+    }
+
+    /* ---- HashMap table (right ~38%) ---- */
+    const tableX = Math.floor(width * 0.62);
+    const tableTopY = 60;
+    const colW = Math.min(78, Math.floor((width - tableX - 16) / 3));
+    const rowH = 26;
+
+    ctx.fillStyle = CSS.label;
+    ctx.font = `700 12px ${FONT_SANS}`;
+    ctx.textAlign = 'left';
+    ctx.fillText('HashMap', tableX, tableTopY - 8);
+
+    /* Header */
+    ctx.fillStyle = CSS.edge;
+    ctx.font = `700 11px ${FONT_SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Key', tableX + colW / 2, tableTopY + rowH / 2);
+    ctx.fillText('Val', tableX + colW + colW / 2, tableTopY + rowH / 2);
+    ctx.fillText('Freq', tableX + colW * 2 + colW / 2, tableTopY + rowH / 2);
+
+    ctx.strokeStyle = CSS.edge;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tableX, tableTopY + rowH);
+    ctx.lineTo(tableX + colW * 3, tableTopY + rowH);
+    ctx.stroke();
+
+    const mapRows = active.mapRows;
+    for (let i = 0; i < mapRows.length; i++) {
+      const ry = tableTopY + rowH + i * rowH;
+      const isAct = active.activeKey != null && mapRows[i].key === active.activeKey;
+
+      if (isAct) {
+        ctx.save();
+        ctx.globalAlpha = 0.10;
+        ctx.fillStyle = CSS.meet;
+        ctx.fillRect(tableX, ry, colW * 3, rowH);
+        ctx.restore();
+      }
+
+      ctx.fillStyle = CSS.label;
+      ctx.font = `600 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(mapRows[i].key), tableX + colW / 2, ry + rowH / 2);
+      ctx.fillText(String(mapRows[i].value), tableX + colW + colW / 2, ry + rowH / 2);
+      ctx.fillText(String(mapRows[i].freq), tableX + colW * 2 + colW / 2, ry + rowH / 2);
+    }
+
+    if (mapRows.length === 0) {
+      ctx.fillStyle = CSS.edge;
+      ctx.font = `600 12px ${FONT_MONO}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('(empty)', tableX + colW * 1.5, tableTopY + rowH + 14);
+    }
+  }
+
+  createSnapshotVisualization({
+    canvasId: 'lfuCanvas', statusId: 'lfuStatus',
+    prevId: 'lfuPrev', nextId: 'lfuNext', resetId: 'lfuReset',
+    buildSnapshots, draw, animationMs: 680,
+    rebuildSnapshotsOnReset: true,
+  });
+}
+
 /* ───── Bootstrap ────────────────────────────────────────────────── */
 
 function initAnimationPicker() {
@@ -2718,11 +3590,14 @@ function init() {
   initMergeListsVisualization();
   initMergeArrayVisualization();
   initMovingAverageVisualization();
+  initRecentCounterVisualization();
   initSqrtBinarySearchVisualization();
   initMajorityElementVisualization();
   initExcelTitleNumberVisualization();
   initHammingWeightVisualization();
   initReverseBitsVisualization();
+  initLRUCacheVisualization();
+  initLFUCacheVisualization();
   initAnimationPicker();
 }
 

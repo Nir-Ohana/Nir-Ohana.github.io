@@ -91,6 +91,11 @@
             </optgroup>
             <optgroup label="Sliding window">
               <option value="moving-average">Moving average from data stream</option>
+              <option value="recent-calls">Number of recent calls (RecentCounter)</option>
+            </optgroup>
+            <optgroup label="Cache design">
+              <option value="lru-cache">LRU Cache (DLL + HashMap)</option>
+              <option value="lfu-cache">LFU Cache (freq buckets + HashMap)</option>
             </optgroup>
             <optgroup label="Search">
               <option value="sqrt">Square root (binary search)</option>
@@ -531,6 +536,119 @@
 
         <div
           id="reverseBitsStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
+      </article>
+      <article
+        class="algo-item"
+        data-topic="Sliding window"
+        data-animation="recent-calls"
+        data-animation-label="Number of recent calls (RecentCounter)"
+      >
+      <header class="page-header">
+        <h2>Number of recent calls (RecentCounter)</h2>
+        <p class="muted">
+          Maintain a queue of timestamps within a <strong>3 000 ms</strong> window.
+          Each reset generates a new <strong>random set of ~18 pings</strong>.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Recent calls visualization">
+        <canvas
+          id="recentCallsCanvas"
+          class="viz-canvas viz-canvas-algo"
+          role="img"
+          aria-label="Number of recent calls RecentCounter visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="Recent calls controls">
+          <button id="recentCallsPrev" type="button" class="btn">Prev</button>
+          <button id="recentCallsNext" type="button" class="btn btn-primary">Next</button>
+          <button id="recentCallsReset" type="button" class="btn">Reset (new random pings)</button>
+        </div>
+
+        <div
+          id="recentCallsStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
+      </article>
+
+      <article
+        class="algo-item"
+        data-topic="Cache design"
+        data-animation="lru-cache"
+        data-animation-label="LRU Cache (DLL + HashMap)"
+      >
+      <header class="page-header">
+        <h2>LRU Cache (DLL + HashMap)</h2>
+        <p class="muted">
+          Doubly linked list with <strong>dummy head/tail</strong> and a <strong>hashmap</strong>
+          for O(1) get &amp; put. Each reset generates <strong>random ops</strong>.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="LRU Cache visualization">
+        <canvas
+          id="lruCanvas"
+          class="viz-canvas viz-canvas-hash"
+          role="img"
+          aria-label="LRU Cache doubly linked list and hashmap visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="LRU Cache controls">
+          <button id="lruPrev" type="button" class="btn">Prev</button>
+          <button id="lruNext" type="button" class="btn btn-primary">Next</button>
+          <button id="lruReset" type="button" class="btn">Reset (new random ops)</button>
+        </div>
+
+        <div
+          id="lruStatus"
+          class="status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </section>
+      </article>
+
+      <article
+        class="algo-item"
+        data-topic="Cache design"
+        data-animation="lfu-cache"
+        data-animation-label="LFU Cache (freq buckets + HashMap)"
+      >
+      <header class="page-header">
+        <h2>LFU Cache (freq buckets + HashMap)</h2>
+        <p class="muted">
+          Frequency buckets with <strong>LRU tie-breaking</strong> and a <strong>hashmap</strong>
+          for O(1) average get &amp; put. Each reset generates <strong>random ops</strong>.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="LFU Cache visualization">
+        <canvas
+          id="lfuCanvas"
+          class="viz-canvas viz-canvas-hash"
+          role="img"
+          aria-label="LFU Cache frequency buckets and hashmap visualization"
+        ></canvas>
+
+        <div class="actions" aria-label="LFU Cache controls">
+          <button id="lfuPrev" type="button" class="btn">Prev</button>
+          <button id="lfuNext" type="button" class="btn btn-primary">Next</button>
+          <button id="lfuReset" type="button" class="btn">Reset (new random ops)</button>
+        </div>
+
+        <div
+          id="lfuStatus"
           class="status"
           role="status"
           aria-live="polite"
