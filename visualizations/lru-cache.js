@@ -308,6 +308,33 @@ export default function initLRUCacheVisualization() {
       drawArrow(ctx, x2 - 2, cy, x1 + 2, CSS.edge, 5);
     }
 
+    /* Ghost: evicted node falls away from old position */
+    if (isAnimating && toSnapshot.evictedKey != null) {
+      const prevList = snapshot.listOrder;
+      for (let i = 0; i < prevList.length; i++) {
+        const displayIdx = prevList.length - 1 - i; // reversed LRU-first
+        if (prevList[displayIdx].key === toSnapshot.evictedKey) {
+          // Compute position in the OLD layout
+          const prevTotal = prevList.length + 2;
+          const prevTotalW = prevTotal * nodeW + (prevTotal - 1) * gap;
+          const prevSx = Math.max(10, Math.floor((width - prevTotalW) / 2));
+          const ghostX = prevSx + (i + 1) * (nodeW + gap);
+          const ghostY = listY + dropDistance * animProgress;
+          const ghostAlpha = 1 - animProgress;
+
+          ctx.save();
+          ctx.globalAlpha = ghostAlpha;
+          drawDLLNode(ctx, ghostX, ghostY, nodeW, nodeH,
+            `k:${prevList[displayIdx].key}`, `v:${prevList[displayIdx].value}`, {
+              stroke: CSS.hare, lw: 2,
+              badge: 'Evicted', badgeColor: CSS.hare
+            });
+          ctx.restore();
+          break;
+        }
+      }
+    }
+
     /* ---- HashMap table ---- */
     const mapY = listY + nodeH + 60;
     ctx.fillStyle = CSS.label;

@@ -5,6 +5,7 @@
 import {
   FONT_SANS, FONT_MONO, CSS,
   getRandomIntInclusive,
+  easeOutCubic,
   createSnapshotVisualization,
 } from '../viz-core.js';
 
@@ -238,6 +239,10 @@ export default function initLFUCacheVisualization() {
     if (width < 10 || height < 10) return;
     const active = isAnimating ? toSnapshot : snapshot;
 
+    /* Animation helpers */
+    const dropDistance = 40;
+    const animProgress = isAnimating ? easeOutCubic(progress) : 1;
+
     /* ---- Operation header ---- */
     ctx.fillStyle = CSS.label;
     ctx.font = `600 13px ${FONT_SANS}`;
@@ -324,14 +329,24 @@ export default function initLFUCacheVisualization() {
 
       for (let ki = 0; ki < bucket.keys.length; ki++) {
         const cx = firstNodeX + ki * (chipW + chipGap);
-        const isActive = active.activeKey != null && bucket.keys[ki] === active.activeKey;
-        drawChip(ctx, cx, cy, chipW, chipH,
+        const isActiveChip = active.activeKey != null && bucket.keys[ki] === active.activeKey;
+
+        /* Drop-in animation for active chip */
+        const chipY = (isActiveChip && isAnimating)
+          ? cy - dropDistance * (1 - animProgress)
+          : cy;
+        const chipAlpha = (isActiveChip && isAnimating) ? animProgress : 1;
+
+        ctx.save();
+        ctx.globalAlpha = chipAlpha;
+        drawChip(ctx, cx, chipY, chipW, chipH,
           `k:${bucket.keys[ki]}`, {
-            stroke: isActive ? CSS.meet : CSS.tortoise,
-            lw: isActive ? 3 : 2,
-            badge: isActive ? active.activeAction : null,
+            stroke: isActiveChip ? CSS.meet : CSS.tortoise,
+            lw: isActiveChip ? 3 : 2,
+            badge: isActiveChip ? active.activeAction : null,
             badgeColor: CSS.meet
           });
+        ctx.restore();
       }
 
       const tailX = firstNodeX + bucket.keys.length * (chipW + chipGap);
@@ -352,6 +367,33 @@ export default function initLFUCacheVisualization() {
         }
         const lastNodeRight = firstNodeX + (bucket.keys.length - 1) * (chipW + chipGap) + chipW;
         drawBidirectionalLink(ctx, lastNodeRight, tailX, centerY, linkColor);
+      }
+    }
+
+    /* Ghost: evicted chip falls away from old position */
+    if (isAnimating && toSnapshot.evictedKey != null) {
+      const prevBuckets = snapshot.buckets;
+      for (let bi = 0; bi < prevBuckets.length; bi++) {
+        const bucket = prevBuckets[bi];
+        const ki = bucket.keys.indexOf(toSnapshot.evictedKey);
+        if (ki < 0) continue;
+
+        const by = bucketsTopY + bi * (bucketRowH + bucketGap);
+        const cy = by + (bucketRowH - chipH) / 2;
+        const firstNodeX = listStartX + sentinelW + chipGap;
+        const ghostX = firstNodeX + ki * (chipW + chipGap);
+        const ghostY = cy + dropDistance * animProgress;
+        const ghostAlpha = 1 - animProgress;
+
+        ctx.save();
+        ctx.globalAlpha = ghostAlpha;
+        drawChip(ctx, ghostX, ghostY, chipW, chipH,
+          `k:${toSnapshot.evictedKey}`, {
+            stroke: CSS.hare, lw: 2,
+            badge: 'Evicted', badgeColor: CSS.hare
+          });
+        ctx.restore();
+        break;
       }
     }
 
