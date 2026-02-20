@@ -252,9 +252,27 @@ export function createSnapshotVisualization({
       stepIndex: state.stepIndex, snapshots,
     });
 
-    statusEl.textContent = (state.animation ? toSnapshot : snapshot).text;
+    const activeSnap = state.animation ? toSnapshot : snapshot;
+    const total = snapshots.length - 1;
+    const stepLabel = state.stepIndex <= 0
+      ? ''
+      : state.stepIndex >= total
+        ? `[${total}/${total}] `
+        : `[${state.stepIndex}/${total}] `;
+    statusEl.textContent = stepLabel + activeSnap.text;
     prevBtn.disabled = state.stepIndex <= 0 || state.animation !== null;
     nextBtn.disabled = state.stepIndex >= snapshots.length - 1 || state.animation !== null;
+  }
+
+  function stepForward() {
+    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
+    runStepAnimation(state.stepIndex + 1);
+  }
+
+  function stepBackward() {
+    if (state.stepIndex <= 0 || state.animation) return;
+    state.stepIndex -= 1;
+    render();
   }
 
   function runStepAnimation(targetIndex) {
@@ -280,19 +298,29 @@ export function createSnapshotVisualization({
     requestAnimationFrame(tick);
   }
 
-  prevBtn.addEventListener('click', () => {
-    if (state.stepIndex <= 0 || state.animation) return;
-    state.stepIndex -= 1;
-    render();
-  });
+  prevBtn.addEventListener('click', stepBackward);
 
-  nextBtn.addEventListener('click', () => {
-    if (state.stepIndex >= snapshots.length - 1 || state.animation) return;
-    runStepAnimation(state.stepIndex + 1);
-  });
+  nextBtn.addEventListener('click', stepForward);
 
   resetBtn.addEventListener('click', () => {
     resetToStart(rebuildSnapshotsOnReset);
+  });
+
+  /* Keyboard navigation — only when this panel is visible */
+  document.addEventListener('keydown', (e) => {
+    const item = canvas.closest('.algo-item');
+    if (item && item.hidden) return;
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      stepForward();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      stepBackward();
+    } else if (e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      resetToStart(rebuildSnapshotsOnReset);
+    }
   });
 
   new ResizeObserver(() => render()).observe(canvas);

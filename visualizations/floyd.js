@@ -242,7 +242,7 @@ export default function initFloydVisualization() {
     three.renderer.render(three.scene, three.camera);
   }
 
-  renderFloyd('T:0  H:0');
+  renderFloyd('Start: Tortoise at node 0, Hare at node 0.');
 
   new ResizeObserver(() => {
     resizeWebGL(three, canvas);
@@ -255,6 +255,7 @@ export default function initFloydVisualization() {
     return;
   }
 
+  let stepCount = 0;
   createVisualizationAutoplaySkill({
     enabled: true,
     stepInterval: STEP_INTERVAL,
@@ -265,16 +266,18 @@ export default function initFloydVisualization() {
       const { next } = list;
       state.tortoise = next[state.tortoise];
       state.hare = next[next[state.hare]];
+      stepCount += 1;
       if (state.tortoise === state.hare) {
         state.done = true;
-        renderFloyd(`Cycle detected! Both met at node ${state.tortoise}.`);
+        renderFloyd(`Step ${stepCount}: Cycle detected! Tortoise and Hare both met at node ${state.tortoise}.`);
       } else {
-        renderFloyd(`T:${state.tortoise}  H:${state.hare}`);
+        renderFloyd(`Step ${stepCount}: Tortoise → node ${state.tortoise} (+1), Hare → node ${state.hare} (+2).`);
       }
     },
     onReset: () => {
       state = { tortoise: 0, hare: 0, done: false };
-      renderFloyd('Restarting… T:0  H:0');
+      stepCount = 0;
+      renderFloyd('Restarting… Tortoise at node 0, Hare at node 0.');
     },
   });
 }
