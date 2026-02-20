@@ -5,6 +5,7 @@
 import {
   FONT_SANS, FONT_MONO, CSS,
   getRandomIntInclusive,
+  easeOutCubic,
   createSnapshotVisualization,
 } from '../viz-core.js';
 
@@ -243,12 +244,12 @@ export default function initLRUCacheVisualization() {
       ctx.fillText(`Evicted: key ${active.evictedKey}`, 16, 42);
     }
 
-    /* ---- Doubly linked list (head → ... → tail) ---- */
+    /* ---- Doubly linked list  TAIL ← LRU … MRU → HEAD ---- */
     const listY = 72;
     const nodeW = 52;
     const nodeH = 44;
-    const listNodes = active.listOrder;
-    const totalNodes = listNodes.length + 2;
+    const listNodes = active.listOrder;  // [0]=MRU … [n-1]=LRU
+    const totalNodes = listNodes.length + 2;  // +HEAD +TAIL
     const gap = 28;
     const totalW = totalNodes * nodeW + (totalNodes - 1) * gap;
     const listSx = Math.max(10, Math.floor((width - totalW) / 2));
@@ -256,30 +257,49 @@ export default function initLRUCacheVisualization() {
     ctx.fillStyle = CSS.label;
     ctx.font = `700 12px ${FONT_SANS}`;
     ctx.textAlign = 'left';
-    ctx.fillText('Doubly Linked List (MRU ← → LRU)', 16, listY - 10);
+    ctx.fillText('Doubly Linked List (LRU ← → MRU)', 16, listY - 10);
 
-    drawDLLNode(ctx, listSx, listY, nodeW, nodeH, 'HEAD', null, {
+    /* Drop-in animation: active node falls from above */
+    const dropDistance = 50;
+    const animProgress = isAnimating ? easeOutCubic(progress) : 1;
+
+    /* TAIL on the left (position 0) */
+    drawDLLNode(ctx, listSx, listY, nodeW, nodeH, 'TAIL', null, {
       stroke: CSS.edge, lw: 2, dimmed: true,
     });
 
+    /* Data nodes in reverse: LRU (leftmost) → MRU (rightmost) */
     for (let i = 0; i < listNodes.length; i++) {
+      const dataIdx = listNodes.length - 1 - i;  // reverse: LRU first
       const nx = listSx + (i + 1) * (nodeW + gap);
-      const isActive = active.activeKey != null && listNodes[i].key === active.activeKey;
-      const isEvicted = active.evictedKey != null && listNodes[i].key === active.evictedKey;
-      drawDLLNode(ctx, nx, listY, nodeW, nodeH,
-        `k:${listNodes[i].key}`, `v:${listNodes[i].value}`, {
+      const isActive = active.activeKey != null && listNodes[dataIdx].key === active.activeKey;
+      const isEvicted = active.evictedKey != null && listNodes[dataIdx].key === active.evictedKey;
+
+      /* Animate active node dropping in from above */
+      const ny = (isActive && isAnimating)
+        ? listY - dropDistance * (1 - animProgress)
+        : listY;
+      const nodeAlpha = (isActive && isAnimating) ? animProgress : 1;
+
+      ctx.save();
+      ctx.globalAlpha = nodeAlpha;
+      drawDLLNode(ctx, nx, ny, nodeW, nodeH,
+        `k:${listNodes[dataIdx].key}`, `v:${listNodes[dataIdx].value}`, {
           stroke: isEvicted ? CSS.hare : (isActive ? CSS.meet : CSS.tortoise),
           lw: isActive || isEvicted ? 3 : 2,
           badge: isActive ? active.activeAction : null,
           badgeColor: CSS.meet
         });
+      ctx.restore();
     }
 
-    const tailX = listSx + (listNodes.length + 1) * (nodeW + gap);
-    drawDLLNode(ctx, tailX, listY, nodeW, nodeH, 'TAIL', null, {
+    /* HEAD on the right (last position) */
+    const headX = listSx + (listNodes.length + 1) * (nodeW + gap);
+    drawDLLNode(ctx, headX, listY, nodeW, nodeH, 'HEAD', null, {
       stroke: CSS.edge, lw: 2, dimmed: true,
     });
 
+    /* Bidirectional arrows between all adjacent nodes */
     for (let i = 0; i < totalNodes - 1; i++) {
       const x1 = listSx + i * (nodeW + gap) + nodeW;
       const x2 = listSx + (i + 1) * (nodeW + gap);
