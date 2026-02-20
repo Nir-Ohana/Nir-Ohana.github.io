@@ -88,9 +88,11 @@ export default function initLFUCacheVisualization() {
       const op = ops[oi];
       let result = null;
       let evictedKey = null;
+      let activeAction = null;
 
       if (op.type === 'get') {
         if (keyNode.has(op.key)) {
+          activeAction = 'Hit';
           const node = keyNode.get(op.key);
           result = node.value;
           const oldFreq = node.freq;
@@ -101,11 +103,13 @@ export default function initLFUCacheVisualization() {
             minFreq = oldFreq + 1;
           }
         } else {
+          activeAction = 'Miss';
           result = -1;
         }
       } else {
         if (capacity <= 0) continue;
         if (keyNode.has(op.key)) {
+          activeAction = 'Updated';
           const node = keyNode.get(op.key);
           node.value = op.value;
           const oldFreq = node.freq;
@@ -116,6 +120,7 @@ export default function initLFUCacheVisualization() {
             minFreq = oldFreq + 1;
           }
         } else {
+          activeAction = 'Inserted';
           if (keyNode.size >= capacity) {
             const minList = freqKeys.get(minFreq);
             const victimKey = minList.shift();
@@ -134,7 +139,7 @@ export default function initLFUCacheVisualization() {
         : `get(${op.key}): hit → ${result}, freq++.`;
       const putDesc = evictedKey != null
         ? `put(${op.key}, ${op.value}): full → evict key ${evictedKey} (minFreq bucket), insert.`
-        : `put(${op.key}, ${op.value}): ${keyNode.has(op.key) && ops.slice(0, oi).some(o => o.key === op.key) ? 'update, freq++' : 'insert, freq=1'}.`;
+        : `put(${op.key}, ${op.value}): ${activeAction.toLowerCase()}, freq${activeAction === 'Updated' ? '++' : '=1'}.`;
 
       snaps.push({
         capacity,
@@ -142,6 +147,7 @@ export default function initLFUCacheVisualization() {
         result,
         evictedKey,
         minFreq,
+        activeAction,
         buckets: snapshotBuckets(),
         mapRows: snapshotMap(),
         activeKey: op.key,
@@ -163,7 +169,7 @@ export default function initLFUCacheVisualization() {
 
   /* Drawing helpers */
 
-  function drawChip(ctx, x, y, w, h, label, { stroke = CSS.node, lw = 2 } = {}) {
+  function drawChip(ctx, x, y, w, h, label, { stroke = CSS.node, lw = 2, badge = null, badgeColor = CSS.meet } = {}) {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 8);
     ctx.fillStyle = '#ffffff';
@@ -177,6 +183,22 @@ export default function initLFUCacheVisualization() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(label), x + w / 2, y + h / 2 + 1);
+
+    if (badge) {
+      ctx.font = `bold 9px ${FONT_SANS}`;
+      const bw = ctx.measureText(badge).width + 8;
+      const bh = 14;
+      const bx = x + w / 2 - bw / 2;
+      const by = y - bh - 4;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 4);
+      ctx.fillStyle = badgeColor;
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(badge, x + w / 2, by + bh / 2 + 1);
+    }
   }
 
   function drawHorizontalArrow(ctx, x1, x2, y, color) {
@@ -307,6 +329,8 @@ export default function initLFUCacheVisualization() {
           `k:${bucket.keys[ki]}`, {
             stroke: isActive ? CSS.meet : CSS.tortoise,
             lw: isActive ? 3 : 2,
+            badge: isActive ? active.activeAction : null,
+            badgeColor: CSS.meet
           });
       }
 
@@ -368,9 +392,11 @@ export default function initLFUCacheVisualization() {
         ctx.fillStyle = CSS.meet;
         ctx.fillRect(tableX, ry, colW * 3, rowH);
         ctx.restore();
+        ctx.fillStyle = CSS.meet;
+      } else {
+        ctx.fillStyle = CSS.label;
       }
 
-      ctx.fillStyle = CSS.label;
       ctx.font = `600 12px ${FONT_MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';

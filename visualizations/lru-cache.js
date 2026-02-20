@@ -86,23 +86,28 @@ export default function initLRUCacheVisualization() {
       const op = ops[oi];
       let result = null;
       let evictedKey = null;
+      let activeAction = null;
 
       if (op.type === 'get') {
         if (map.has(op.key)) {
+          activeAction = 'Hit';
           const node = map.get(op.key);
           result = node.value;
           remove(node);
           insertAfterHead(node);
         } else {
+          activeAction = 'Miss';
           result = -1;
         }
       } else {
         if (map.has(op.key)) {
+          activeAction = 'Updated';
           const node = map.get(op.key);
           node.value = op.value;
           remove(node);
           insertAfterHead(node);
         } else {
+          activeAction = 'Inserted';
           if (map.size >= capacity) {
             const victim = tail.prev;
             evictedKey = victim.key;
@@ -120,15 +125,14 @@ export default function initLRUCacheVisualization() {
         : `get(${op.key}): hit → ${result}, move to front.`;
       const putDesc = evictedKey != null
         ? `put(${op.key}, ${op.value}): full → evict key ${evictedKey}, insert at front.`
-        : map.size <= capacity && !evictedKey
-          ? `put(${op.key}, ${op.value}): ${ops.slice(0, oi).some(o => o.key === op.key && o.type === 'put') || snaps.some(s => s.activeKey === op.key) ? 'update' : 'insert'} at front.`
-          : `put(${op.key}, ${op.value}): insert at front.`;
+        : `put(${op.key}, ${op.value}): ${activeAction.toLowerCase()} at front.`;
 
       snaps.push({
         capacity,
         op,
         result,
         evictedKey,
+        activeAction,
         listOrder: listOrder(),
         mapView: mapView(),
         activeKey: op.key,
@@ -150,7 +154,7 @@ export default function initLRUCacheVisualization() {
 
   /* Drawing helpers */
 
-  function drawDLLNode(ctx, x, y, w, h, label, sublabel, { stroke = CSS.node, lw = 2, dimmed = false } = {}) {
+  function drawDLLNode(ctx, x, y, w, h, label, sublabel, { stroke = CSS.node, lw = 2, dimmed = false, badge = null, badgeColor = CSS.meet } = {}) {
     ctx.save();
     if (dimmed) ctx.globalAlpha = 0.35;
     ctx.beginPath();
@@ -172,6 +176,22 @@ export default function initLRUCacheVisualization() {
       ctx.fillText(String(sublabel), x + w / 2, y + h / 2 + 10);
     }
     ctx.restore();
+
+    if (badge) {
+      ctx.font = `bold 10px ${FONT_SANS}`;
+      const bw = ctx.measureText(badge).width + 10;
+      const bh = 16;
+      const bx = x + w / 2 - bw / 2;
+      const by = y - bh - 6;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 4);
+      ctx.fillStyle = badgeColor;
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(badge, x + w / 2, by + bh / 2 + 1);
+    }
   }
 
   function drawArrow(ctx, x1, y, x2, color, offsetY) {
@@ -250,6 +270,8 @@ export default function initLRUCacheVisualization() {
         `k:${listNodes[i].key}`, `v:${listNodes[i].value}`, {
           stroke: isEvicted ? CSS.hare : (isActive ? CSS.meet : CSS.tortoise),
           lw: isActive || isEvicted ? 3 : 2,
+          badge: isActive ? active.activeAction : null,
+          badgeColor: CSS.meet
         });
     }
 
@@ -301,9 +323,11 @@ export default function initLRUCacheVisualization() {
         ctx.fillStyle = CSS.meet;
         ctx.fillRect(tableX, ry, colW * 2, rowH);
         ctx.restore();
+        ctx.fillStyle = CSS.meet;
+      } else {
+        ctx.fillStyle = CSS.label;
       }
 
-      ctx.fillStyle = CSS.label;
       ctx.font = `600 13px ${FONT_MONO}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
