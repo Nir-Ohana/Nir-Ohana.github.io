@@ -90,6 +90,9 @@
           <optgroup label="Prefix Sums">
             <option value="range-sum">Range Sum Query - Immutable</option>
           </optgroup>
+          <optgroup label="Hash Map Applications">
+            <option value="two-sum-iii">Two Sum III - Data structure design</option>
+          </optgroup>
           <optgroup label="Search">
             <option value="sqrt">Square root (binary search)</option>
           </optgroup>
@@ -545,6 +548,29 @@
         </div>
 
         <div id="rangeSumStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
+    </article>
+    <article class="algo-item" data-topic="Hash Map Applications" data-animation="two-sum-iii"
+      data-animation-label="Two Sum III - Data structure design">
+      <header class="page-header">
+        <h2>Two Sum III - Data structure design</h2>
+        <p class="muted">
+          Design a data structure that accepts a stream of integers and checks if it has a pair of integers that sum up
+          to a particular value. This uses a <strong>Frequency Map (HashMap)</strong>.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Two Sum III visualization">
+        <canvas id="twoSumIIICanvas" class="viz-canvas viz-canvas-algo" role="img"
+          aria-label="Two Sum III Frequency Map visualization"></canvas>
+
+        <div class="actions" aria-label="Two Sum III controls">
+          <button id="twoSumIIIPrev" type="button" class="btn">Prev</button>
+          <button id="twoSumIIINext" type="button" class="btn btn-primary">Next</button>
+          <button id="twoSumIIIReset" type="button" class="btn">Reset (new stream &amp; queries)</button>
+        </div>
+
+        <div id="twoSumIIIStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
     </article>
   </main>
