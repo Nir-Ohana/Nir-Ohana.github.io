@@ -29,6 +29,7 @@ const vizModules = {
   'queue-stacks': () => import('./visualizations/queue-stacks.js'),
   'range-sum': () => import('./visualizations/range-sum.js'),
   'two-sum-iii': () => import('./visualizations/two-sum-iii.js'),
+  'string-iterator': () => import('./visualizations/string-iterator.js'),
 };
 
 const initialized = new Set();

@@ -93,6 +93,9 @@
           <optgroup label="Hash Map Applications">
             <option value="two-sum-iii">Two Sum III - Data structure design</option>
           </optgroup>
+          <optgroup label="String Processing">
+            <option value="string-iterator">Design Compressed String Iterator</option>
+          </optgroup>
           <optgroup label="Search">
             <option value="sqrt">Square root (binary search)</option>
           </optgroup>
@@ -571,6 +574,30 @@
         </div>
 
         <div id="twoSumIIIStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
+    </article>
+    <article class="algo-item" data-topic="String Processing" data-animation="string-iterator"
+      data-animation-label="Design Compressed String Iterator">
+      <header class="page-header">
+        <h2>Design Compressed String Iterator</h2>
+        <p class="muted">
+          Design and implement a data structure for a compressed string iterator. The given compressed string will be in
+          the form of each letter followed by a positive integer representing the number of this letter existing in the
+          original uncompressed string.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="String Iterator visualization">
+        <canvas id="stringIteratorCanvas" class="viz-canvas viz-canvas-algo" role="img"
+          aria-label="String Iterator state visualization"></canvas>
+
+        <div class="actions" aria-label="String Iterator controls">
+          <button id="stringIteratorPrev" type="button" class="btn">Prev</button>
+          <button id="stringIteratorNext" type="button" class="btn btn-primary">Next</button>
+          <button id="stringIteratorReset" type="button" class="btn">Reset (new random string)</button>
+        </div>
+
+        <div id="stringIteratorStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
     </article>
   </main>
