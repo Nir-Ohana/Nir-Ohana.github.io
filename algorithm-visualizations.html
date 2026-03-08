@@ -87,6 +87,9 @@
             <option value="stack-queues">Implement Stack using Queues</option>
             <option value="queue-stacks">Implement Queue using Stacks</option>
           </optgroup>
+          <optgroup label="Prefix Sums">
+            <option value="range-sum">Range Sum Query - Immutable</option>
+          </optgroup>
           <optgroup label="Search">
             <option value="sqrt">Square root (binary search)</option>
           </optgroup>
@@ -518,6 +521,30 @@
         </div>
 
         <div id="queueStacksStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
+    </article>
+    <article class="algo-item" data-topic="Prefix Sums" data-animation="range-sum"
+      data-animation-label="Range Sum Query - Immutable">
+      <header class="page-header">
+        <h2>Range Sum Query - Immutable</h2>
+        <p class="muted">
+          Pre-compute cumulative sums to answer range queries in <strong>O(1)</strong> time.
+          Instead of recalculating the sum by iterating each time, we lookup <strong>prefix_sums[right + 1] -
+            prefix_sums[left]</strong>.
+        </p>
+      </header>
+
+      <section class="panel" aria-label="Range Sum Query visualization">
+        <canvas id="rangeSumCanvas" class="viz-canvas viz-canvas-algo" role="img"
+          aria-label="Range Sum Query with prefix array visualization"></canvas>
+
+        <div class="actions" aria-label="Range Sum Query controls">
+          <button id="rangeSumPrev" type="button" class="btn">Prev</button>
+          <button id="rangeSumNext" type="button" class="btn btn-primary">Next</button>
+          <button id="rangeSumReset" type="button" class="btn">Reset (new random array &amp; queries)</button>
+        </div>
+
+        <div id="rangeSumStatus" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
       </section>
     </article>
   </main>

@@ -27,6 +27,7 @@ const vizModules = {
   'lfu-cache': () => import('./visualizations/lfu-cache.js'),
   'stack-queues': () => import('./visualizations/stack-queues.js'),
   'queue-stacks': () => import('./visualizations/queue-stacks.js'),
+  'range-sum': () => import('./visualizations/range-sum.js'),
 };
 
 const initialized = new Set();
