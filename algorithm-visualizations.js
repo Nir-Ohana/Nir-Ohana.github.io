@@ -10,21 +10,23 @@ import { getReducedMotion } from './bg-utils.js';
 /* --- Lazy-loading registry ---------------------------------------- */
 
 const vizModules = {
-  'floyd':          () => import('./visualizations/floyd.js'),
-  'tree':           () => import('./visualizations/tree.js'),
-  'hash':           () => import('./visualizations/hash-table.js'),
-  'fibonacci':      () => import('./visualizations/fibonacci.js'),
-  'merge-lists':    () => import('./visualizations/merge-lists.js'),
-  'merge-array':    () => import('./visualizations/merge-array.js'),
+  'floyd': () => import('./visualizations/floyd.js'),
+  'tree': () => import('./visualizations/tree.js'),
+  'hash': () => import('./visualizations/hash-table.js'),
+  'fibonacci': () => import('./visualizations/fibonacci.js'),
+  'merge-lists': () => import('./visualizations/merge-lists.js'),
+  'merge-array': () => import('./visualizations/merge-array.js'),
   'moving-average': () => import('./visualizations/moving-average.js'),
-  'recent-calls':   () => import('./visualizations/recent-calls.js'),
-  'sqrt':           () => import('./visualizations/sqrt.js'),
-  'majority':       () => import('./visualizations/majority.js'),
-  'excel':          () => import('./visualizations/excel.js'),
-  'hamming':        () => import('./visualizations/hamming.js'),
-  'reverse-bits':   () => import('./visualizations/reverse-bits.js'),
-  'lru-cache':      () => import('./visualizations/lru-cache.js'),
-  'lfu-cache':      () => import('./visualizations/lfu-cache.js'),
+  'recent-calls': () => import('./visualizations/recent-calls.js'),
+  'sqrt': () => import('./visualizations/sqrt.js'),
+  'majority': () => import('./visualizations/majority.js'),
+  'excel': () => import('./visualizations/excel.js'),
+  'hamming': () => import('./visualizations/hamming.js'),
+  'reverse-bits': () => import('./visualizations/reverse-bits.js'),
+  'lru-cache': () => import('./visualizations/lru-cache.js'),
+  'lfu-cache': () => import('./visualizations/lfu-cache.js'),
+  'stack-queues': () => import('./visualizations/stack-queues.js'),
+  'queue-stacks': () => import('./visualizations/queue-stacks.js'),
 };
 
 const initialized = new Set();

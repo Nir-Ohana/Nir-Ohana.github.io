@@ -40,7 +40,7 @@ export default function initHammingWeightVisualization() {
         n, original, hamm, prevN: prev,
         cleared: BITS - 1 - Math.floor(Math.log2(prev & -prev)),
         binary: toBin(n), prevBinary: toBin(prev),
-        text: `n &= (n-1): ${prev} → ${n}. Cleared bit ${BITS - 1 - Math.floor(Math.log2(prev & -prev))}. Count = ${hamm}.`,
+        text: `n &= (n-1): ${prev} → ${n}. Cleared bit ${Math.floor(Math.log2(prev & -prev))}. Count = ${hamm}.`,
       });
     }
 
@@ -117,8 +117,9 @@ export default function initHammingWeightVisualization() {
     ctx.textAlign = 'center';
     for (let vi = 0; vi < visibleBits; vi++) {
       const bi = startBit + vi;
+      const bitIndex = BITS - 1 - bi;
       const x = sx + vi * (cw + gap);
-      ctx.fillText(String(bi), x + cw / 2, sy + ch + 12);
+      ctx.fillText(String(bitIndex), x + cw / 2, sy + ch + 12);
     }
 
     if (active.prevBinary && !isAnimating) {
