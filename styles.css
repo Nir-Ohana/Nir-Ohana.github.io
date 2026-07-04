@@ -841,61 +841,41 @@ h3 {
 
 .viz-layout {
   display: flex;
+  align-items: flex-start;
   min-height: calc(100vh - 140px);
 }
 
 .viz-controls {
+  position: sticky;
+  top: 20px;
   width: 320px;
   flex-shrink: 0;
   padding: 20px;
   margin: 20px;
-  align-self: flex-start;
-  position: sticky;
-  top: 20px;
-  transition: width 250ms ease, padding 250ms ease;
-}
-
-.viz-sidebar-content {
-  transition: opacity 150ms ease;
+  overflow: hidden;
+  transition: width 300ms ease, padding 300ms ease;
 }
 
 .viz-controls.is-collapsed {
-  width: 48px;
+  width: 56px;
   padding: 12px;
 }
 
-.viz-controls.is-collapsed .viz-sidebar-content {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.viz-controls.is-collapsed .viz-picker-row,
-.viz-controls.is-collapsed .viz-info,
-.viz-controls.is-collapsed .viz-hint {
-  opacity: 0;
-  pointer-events: none;
-  height: 0;
-  margin: 0;
-  padding: 0;
-}
-
 .viz-sidebar-toggle {
-  position: absolute;
-  top: 12px;
-  right: -16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
+  margin: 0 auto 14px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg);
   color: var(--fg);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-size: 14px;
-  transition: transform 250ms ease, right 250ms ease;
-  z-index: 10;
+  flex-shrink: 0;
+  transition: transform 300ms ease, border-color 150ms ease;
 }
 
 .viz-sidebar-toggle:hover {
@@ -903,13 +883,26 @@ h3 {
 }
 
 .viz-controls.is-collapsed .viz-sidebar-toggle {
-  right: 7px;
+  margin-bottom: 0;
   transform: rotate(180deg);
+}
+
+.viz-sidebar-content {
+  overflow: hidden;
+  max-height: 600px;
+  opacity: 1;
+  transition: max-height 300ms ease, opacity 200ms ease;
+}
+
+.viz-controls.is-collapsed .viz-sidebar-content {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .viz-canvas-wrapper {
   flex: 1;
-  min-height: 100vh;
+  min-height: calc(100vh - 180px);
 }
 
 .viz-picker-row {
@@ -917,16 +910,15 @@ h3 {
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
-  transition: opacity 200ms ease;
 }
 
 .viz-picker-select {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .viz-info {
   margin-bottom: 12px;
-  transition: opacity 200ms ease;
 }
 
 .viz-info h2 {
@@ -939,7 +931,6 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgb(249 250 251 / 0.5);
-  transition: opacity 200ms ease;
 }
 
 /* --- Responsive --- */

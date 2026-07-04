@@ -1,15 +1,13 @@
 import { getReducedMotion } from './bg-utils.js';
-import { initMandelbrotBackground } from './mandelbrot-bg.js';
 import { initMobiusBackground } from './mobius-bg.js';
 
 // Home page: pick a different background on each refresh.
-// Options:
-// - Rubik's cube (three-bg.js)
-// - Mandelbrot (mandelbrot-bg.js)
-// - Möbius strip (mobius-bg.js)
+// Options: Rubik's cube (three-bg.js) and Möbius strip (mobius-bg.js).
+// Mandelbrot is excluded from the home page but still available on the
+// Visualizations page (visualizations.html).
 const reducedMotion = getReducedMotion();
 
-const choices = ['rubik', 'mandelbrot', 'mobius'];
+const choices = ['rubik', 'mobius'];
 const storageKey = 'homeBgChoiceIndex';
 
 function getNextIndex() {
@@ -30,8 +28,6 @@ const choice = choices[getNextIndex()];
 if (choice === 'rubik') {
   // Side-effect module (runs immediately). It already respects reduced motion.
   import('./three-bg.js');
-} else if (choice === 'mandelbrot') {
-  initMandelbrotBackground({ animate: !reducedMotion });
 } else {
   initMobiusBackground({ animate: !reducedMotion });
 }
