@@ -235,7 +235,7 @@ export default function initLRUCacheVisualization() {
       ? (active.op.type === 'get'
         ? `get(${active.op.key})` + (active.result != null ? ` → ${active.result}` : '')
         : `put(${active.op.key}, ${active.op.value})`)
-      : '—';
+      : '-';
     ctx.fillText(`Operation: ${opStr}`, 16, 22);
     ctx.fillText(`Capacity: ${active.capacity}`, width - 140, 22);
 

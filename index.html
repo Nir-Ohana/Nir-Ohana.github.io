@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Nir Ohana — Software Engineer portfolio" />
+    <meta name="description" content="Nir Ohana - Software Engineer portfolio. Distributed systems, AI-driven workflows, and interactive tools." />
 
-    <title>Nir Ohana | Portfolio</title>
+    <title>Nir Ohana | Software Engineer</title>
 
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -20,10 +20,10 @@
       <div class="container">
         <div class="header-inner">
           <div>
-            <h1>Hi there, I’m <span class="accent">Nir Ohana</span></h1>
+            <h1>Hi there, I'm <span class="accent">Nir Ohana</span></h1>
             <p class="subtitle">
-              Software Engineer focused on scalable distributed systems, high-traffic
-              infrastructure, and AI-driven workflows.
+              Software Engineer building scalable distributed systems, AI-driven
+              workflows, and interactive tools.
             </p>
           </div>
 
@@ -70,95 +70,245 @@
     </aside>
 
     <main id="content" class="container">
+      <!-- About -->
       <section id="about" class="section">
         <h2>About</h2>
         <p>
-          I am a <strong>Software Engineer</strong> with over 5 years of experience
-          architecting scalable, distributed systems and optimizing high-traffic infrastructure.
-          Currently, I'm building data-intensive microservices and AI-driven workflows at
-          <strong>Innovid</strong>.
+          I'm a Software Engineer with over 6 years of experience building
+          data-intensive systems and AI-driven workflows. I enjoy turning complex
+          infrastructure challenges into simpler, more efficient solutions, and I
+          like to build tools that make developers' lives easier along the way.
         </p>
       </section>
 
-      <section id="work" class="section">
-        <h2>I’m currently working on</h2>
-        <ul class="list">
-          <li>
-            Architecting Kafka-based microservices for asynchronous communication and heavy loads.
-          </li>
-          <li>
-            Integrating Generative AI to replace legacy ML models, reducing overhead and
-            latency.
-          </li>
-          <li>
-            Developing an <strong>AI-powered image editing platform</strong> with a focus on token
-            economy and secure storage.
-          </li>
-        </ul>
+      <!-- Experience -->
+      <section id="experience" class="section">
+        <h2>What I've Been Building</h2>
+
+        <div class="timeline">
+          <article class="timeline-item">
+            <div class="timeline-header">
+              <div>
+                <h3>Innovid</h3>
+                <p class="timeline-role">Software Engineer III</p>
+              </div>
+              <span class="pill">May 2022 - Present</span>
+            </div>
+            <ul class="list compact">
+              <li>
+                Reworked a legacy video encoding pipeline, cutting unnecessary
+                renditions by <strong>85%</strong> and reducing encoding costs by over
+                <strong>80%</strong>.
+              </li>
+              <li>
+                Architected Kafka-based microservices for asynchronous communication
+                and heavy workloads.
+              </li>
+              <li>
+                Built features for a report builder platform used by
+                <strong>2,000+</strong> enterprise clients, delivering
+                <strong>5,000+</strong> daily reports on ad performance.
+              </li>
+              <li>
+                Migrated the AI insights workflow from self-hosted models to the
+                Gemini API, eliminating GPU infrastructure overhead and cold-start
+                latency while improving output quality.
+              </li>
+              <li>
+                Developed an AI agent service on Koog and Claude (AWS Bedrock) for
+                generating and editing creative targeting decision trees via natural
+                language, with MCP over SSE for multi-mode tool connectivity.
+              </li>
+            </ul>
+          </article>
+
+          <article class="timeline-item">
+            <div class="timeline-header">
+              <div>
+                <h3>Checkpoint Software Technologies</h3>
+                <p class="timeline-role">Python Backend Developer</p>
+              </div>
+              <span class="pill">Apr 2020 - Apr 2022</span>
+            </div>
+            <ul class="list compact">
+              <li>
+                Engineered a Python/Django web application to streamline workflows
+                for cybersecurity research teams.
+              </li>
+              <li>
+                Implemented SSO to secure access to cloud-based services.
+              </li>
+              <li>
+                Built integration test infrastructure with Selenium and Jenkins.
+              </li>
+            </ul>
+          </article>
+        </div>
       </section>
 
+      <!-- Projects -->
       <section id="projects" class="section">
-        <h2>Projects</h2>
+        <h2>Personal Projects</h2>
 
-        <article class="card">
+        <article class="card project-card">
           <div class="card-title">
             <h3>
               <a href="https://zaffrai.com" target="_blank" rel="noreferrer">Zaffrai</a>
             </h3>
-            <span class="pill">AI Image Editing SaaS</span>
+            <span class="pill">AI Photo Editor</span>
           </div>
           <p>
-            Building an AI-powered image editing SaaS that lets users edit photos via natural
-            language (“No editor needed... just your thoughts”).
+            A context-aware AI photo editor that outperforms standard tools by
+            referencing the original image. Users edit photos through natural
+            language (no manual tools needed).
           </p>
-          <ul class="list compact">
-            <li><strong>Key Features:</strong> Object removal, old photo restoration, generative edits.</li>
-            <li><strong>Stack:</strong> Python, Gemini API, React.</li>
-          </ul>
+          <div class="tech-tags">
+            <span class="tag">React</span>
+            <span class="tag">TypeScript</span>
+            <span class="tag">FastAPI</span>
+            <span class="tag">Python</span>
+            <span class="tag">PostgreSQL</span>
+            <span class="tag">Gemini</span>
+            <span class="tag">Docker</span>
+            <span class="tag">Prometheus</span>
+            <span class="tag">Grafana</span>
+          </div>
         </article>
       </section>
 
+      <!-- Tools -->
+      <section id="tools" class="section">
+        <h2>Interactive Tools</h2>
+        <p class="muted">
+          Small utilities I've built to explore algorithms and make developer tasks easier.
+        </p>
+
+        <div class="grid tool-grid">
+          <a href="./algorithm-visualizations.html" class="card tool-card">
+            <h3>Algorithm Visualizations</h3>
+            <p class="muted">
+              Interactive visualizations of classic algorithms: sorting, graph
+              traversal, hash tables, and more.
+            </p>
+            <span class="pill arrow">Explore →</span>
+          </a>
+
+          <a href="./json-beautifier.html" class="card tool-card">
+            <h3>JSON Beautifier</h3>
+            <p class="muted">
+              Format, validate, and explore JSON with a collapsible tree view and
+              syntax highlighting.
+            </p>
+            <span class="pill arrow">Try it →</span>
+          </a>
+
+          <a href="./html-renderer.html" class="card tool-card">
+            <h3>HTML Renderer</h3>
+            <p class="muted">
+              Write HTML and see it rendered in real time, acting as a quick sandbox for
+              prototyping and experimentation.
+            </p>
+            <span class="pill arrow">Try it →</span>
+          </a>
+        </div>
+      </section>
+
+      <!-- Tech Stack -->
       <section id="stack" class="section">
         <h2>Tech Stack</h2>
 
-        <div class="grid">
-          <div class="card">
+        <div class="stack-grid">
+          <div class="stack-card">
             <h3>Languages</h3>
-            <p class="muted">Java, Kotlin, Python, TypeScript, JavaScript, SQL, PHP.</p>
+            <div class="tech-tags">
+              <span class="tag">Java</span>
+              <span class="tag">Kotlin</span>
+              <span class="tag">Python</span>
+              <span class="tag">TypeScript</span>
+              <span class="tag">JavaScript</span>
+              <span class="tag">SQL</span>
+            </div>
           </div>
-          <div class="card">
+
+          <div class="stack-card">
+            <h3>Frameworks &amp; Libraries</h3>
+            <div class="tech-tags">
+              <span class="tag">Spring Boot</span>
+              <span class="tag">Django</span>
+              <span class="tag">Ktor</span>
+              <span class="tag">FastAPI</span>
+              <span class="tag">React</span>
+              <span class="tag">Koog</span>
+            </div>
+          </div>
+
+          <div class="stack-card">
             <h3>Infrastructure &amp; Cloud</h3>
-            <p class="muted">AWS, Docker, Kubernetes, Kafka, CI/CD (TeamCity/Jenkins).</p>
+            <div class="tech-tags">
+              <span class="tag">AWS</span>
+              <span class="tag">Docker</span>
+              <span class="tag">Kubernetes</span>
+              <span class="tag">Pulumi</span>
+              <span class="tag">Terraform</span>
+            </div>
+          </div>
+
+          <div class="stack-card">
+            <h3>Data &amp; Messaging</h3>
+            <div class="tech-tags">
+              <span class="tag">PostgreSQL</span>
+              <span class="tag">MySQL</span>
+              <span class="tag">Elasticsearch</span>
+              <span class="tag">Kafka</span>
+              <span class="tag">SQS</span>
+              <span class="tag">RabbitMQ</span>
+            </div>
+          </div>
+
+          <div class="stack-card">
+            <h3>Testing &amp; CI/CD</h3>
+            <div class="tech-tags">
+              <span class="tag">Playwright</span>
+              <span class="tag">JUnit</span>
+              <span class="tag">Mockito</span>
+              <span class="tag">Selenium</span>
+              <span class="tag">Jenkins</span>
+              <span class="tag">TeamCity</span>
+              <span class="tag">GitHub Actions</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="highlights" class="section">
-        <h2>Professional Highlights</h2>
-        <ul class="list">
-          <li>Reduced video encoding costs by <strong>80%</strong> through legacy flow optimization.</li>
-          <li>Delivered reporting platforms serving <strong>2,000+</strong> enterprise clients.</li>
-          <li>
-            Engineered Python/Django security tools for cybersecurity research teams.
-          </li>
-        </ul>
+      <!-- Education -->
+      <section id="education" class="section">
+        <h2>Education</h2>
+        <div class="card">
+          <div class="card-title">
+            <h3>Ben Gurion University</h3>
+            <span class="pill">2022</span>
+          </div>
+          <p class="muted">BSc in Computer Science</p>
+        </div>
       </section>
 
+      <!-- Contact -->
       <section id="contact" class="section">
-        <h2>Contact</h2>
-        <ul class="list">
-          <li>
-            <a href="mailto:niroh3005@gmail.com">niroh3005@gmail.com</a>
-          </li>
-          <li>
-            <a
-              href="https://www.linkedin.com/in/nir-ohana-2355a8229/"
-              target="_blank"
-              rel="noreferrer"
-              >LinkedIn</a
-            >
-          </li>
-        </ul>
+        <h2>Get in Touch</h2>
+        <div class="contact-links">
+          <a href="mailto:niroh3005@gmail.com" class="card contact-card">
+            <span class="contact-icon">✉</span>
+            <span>niroh3005@gmail.com</span>
+          </a>
+          <a href="https://www.linkedin.com/in/nir-ohana-2355a8229/" target="_blank" rel="noreferrer" class="card contact-card">
+            <span class="contact-icon">in</span>
+            <span>LinkedIn</span>
+          </a>
+          <a href="https://github.com/Nir-Ohana" target="_blank" rel="noreferrer" class="card contact-card">
+            <span class="contact-icon">⌨</span>
+            <span>GitHub</span>
+          </a>
+        </div>
       </section>
     </main>
 

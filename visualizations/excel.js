@@ -1,5 +1,5 @@
 /**
- * Excel column title → number (base-26, shift-left logic) — snapshot-based visualization.
+ * Excel column title → number (base-26, shift-left logic) - snapshot-based visualization.
  */
 
 import {

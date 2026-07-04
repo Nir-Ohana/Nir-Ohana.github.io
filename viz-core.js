@@ -1,5 +1,5 @@
 /**
- * viz-core.js — Shared constants, helpers, and framework for algorithm visualizations.
+ * viz-core.js - Shared constants, helpers, and framework for algorithm visualizations.
  *
  * Centralizes all reusable logic so individual visualization modules stay focused
  * on their own algorithm simulation and draw routine.
@@ -190,8 +190,8 @@ export function createVisualizationAutoplaySkill({
  * animated step transitions, ResizeObserver, and autoplay.            *
  *                                                                     *
  * Each visualization only needs to provide:                           *
- *   buildSnapshots()  — returns the step array                        *
- *   draw(ctx, state)  — renders one frame                             *
+ *   buildSnapshots()  - returns the step array                        *
+ *   draw(ctx, state)  - renders one frame                             *
  * ──────────────────────────────────────────────────────────────────── */
 
 export function createSnapshotVisualization({

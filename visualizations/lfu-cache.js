@@ -252,7 +252,7 @@ export default function initLFUCacheVisualization() {
       ? (active.op.type === 'get'
         ? `get(${active.op.key})` + (active.result != null ? ` → ${active.result}` : '')
         : `put(${active.op.key}, ${active.op.value})`)
-      : '—';
+      : '-';
     ctx.fillText(`Op: ${opStr}`, 16, 20);
     ctx.fillText(`Capacity: ${active.capacity}`, width - 140, 20);
     ctx.fillText(`minFreq: ${active.minFreq}`, width / 2 - 40, 20);

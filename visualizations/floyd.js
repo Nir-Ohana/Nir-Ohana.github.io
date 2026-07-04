@@ -1,5 +1,5 @@
 /**
- * Floyd's cycle detection (Tortoise & Hare) — WebGL / Three.js visualization.
+ * Floyd's cycle detection (Tortoise & Hare) - WebGL / Three.js visualization.
  */
 
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
@@ -251,7 +251,7 @@ export default function initFloydVisualization() {
   }).observe(canvas);
 
   if (getReducedMotion()) {
-    statusEl.textContent = 'Reduced motion enabled — animation paused.';
+    statusEl.textContent = 'Reduced motion enabled, animation paused.';
     return;
   }
 
