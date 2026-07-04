@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Interactive Three.js visualizations: Rubik's cube, Mandelbrot set, Möbius strip" />
+
+  <title>Visualizations | Nir Ohana</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+
+  <div class="bg-layer" aria-hidden="true">
+    <canvas id="bg-canvas"></canvas>
+  </div>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="header-inner">
+        <div>
+          <h1>Visualizations</h1>
+          <p class="subtitle">Interactive Three.js backgrounds: pick one or let it cycle on refresh.</p>
+        </div>
+
+        <button type="button" class="nav-toggle" aria-label="Open menu" aria-controls="site-menu-panel"
+          aria-expanded="false" data-menu-toggle>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="nav-overlay" hidden data-menu-overlay></div>
+
+  <aside id="site-menu-panel" class="nav-panel" hidden role="dialog" aria-modal="true" aria-labelledby="site-menu-title"
+    data-menu-panel>
+    <div class="nav-panel-header">
+      <h2 id="site-menu-title" class="sr-only">Site menu</h2>
+      <button type="button" class="nav-close" aria-label="Close menu" data-menu-close>
+        ×
+      </button>
+    </div>
+
+    <nav class="nav-links" aria-label="Primary">
+      <a href="./index.html">Home</a>
+      <a href="./visualizations.html" aria-current="page">Visualizations</a>
+      <a href="./algorithm-visualizations.html">Algorithm visualizations</a>
+      <a href="./json-beautifier.html">JSON Beautifier</a>
+      <a href="./html-renderer.html">HTML Renderer</a>
+    </nav>
+  </aside>
+
+  <main id="content">
+    <div class="viz-layout">
+      <aside class="panel viz-controls" id="vizSidebar">
+        <button type="button" class="viz-sidebar-toggle" id="vizSidebarToggle" aria-label="Toggle sidebar" aria-expanded="true">
+          <span class="viz-sidebar-toggle-icon" aria-hidden="true">◀</span>
+        </button>
+        <div class="viz-sidebar-content">
+          <div class="viz-picker-row">
+            <label class="small" for="vizPicker">Visualization</label>
+            <select id="vizPicker" class="input viz-picker-select">
+              <option value="rubik">Rubik's Cube (2×2)</option>
+              <option value="mandelbrot">Mandelbrot Set</option>
+              <option value="mobius">Mobius Strip</option>
+            </select>
+          </div>
+          <div class="viz-info">
+            <h2 id="vizTitle">Rubik's Cube (2×2)</h2>
+            <p id="vizDescription" class="muted">
+              A 2×2 Rubik's cube that scrambles and solves itself continuously.
+            </p>
+          </div>
+          <p class="viz-hint muted small">
+            Tip: Refresh the page to cycle to the next visualization automatically.
+          </p>
+        </div>
+      </aside>
+      <div class="viz-canvas-wrapper"></div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p class="muted">© <span id="year">2026</span> Nir Ohana</p>
+    </div>
+  </footer>
+
+  <script type="module" src="./site.js"></script>
+  <script type="module" src="./visualizations.js"></script>
+</body>
+
+</html>

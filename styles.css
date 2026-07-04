@@ -837,6 +837,101 @@ h3 {
   box-shadow: 0 1px 0 rgb(0 0 0 / 0.06);
 }
 
+/* --- Visualization page controls --- */
+
+.viz-layout {
+  display: flex;
+  min-height: calc(100vh - 140px);
+}
+
+.viz-controls {
+  width: 320px;
+  flex-shrink: 0;
+  padding: 20px;
+  margin: 20px;
+  align-self: flex-start;
+  position: sticky;
+  top: 20px;
+  transition: width 250ms ease, padding 250ms ease;
+  overflow: hidden;
+}
+
+.viz-controls.is-collapsed {
+  width: 48px;
+  padding: 12px;
+}
+
+.viz-controls.is-collapsed .viz-picker-row,
+.viz-controls.is-collapsed .viz-info,
+.viz-controls.is-collapsed .viz-hint {
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.viz-sidebar-toggle {
+  position: absolute;
+  top: 12px;
+  right: -16px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: transform 250ms ease;
+}
+
+.viz-sidebar-toggle:hover {
+  border-color: var(--accent);
+}
+
+.viz-controls.is-collapsed .viz-sidebar-toggle {
+  transform: rotate(180deg);
+}
+
+.viz-canvas-wrapper {
+  flex: 1;
+  min-height: 100vh;
+}
+
+.viz-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  transition: opacity 200ms ease;
+}
+
+.viz-picker-select {
+  width: 100%;
+}
+
+.viz-info {
+  margin-bottom: 12px;
+  transition: opacity 200ms ease;
+}
+
+.viz-info h2 {
+  margin-bottom: 6px;
+}
+
+.viz-hint {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgb(249 250 251 / 0.5);
+  transition: opacity 200ms ease;
+}
+
 /* --- Responsive --- */
 
 @media (max-width: 780px) {
@@ -856,6 +951,21 @@ h3 {
   .timeline-header {
     flex-direction: column;
     gap: 6px;
+  }
+
+  .viz-layout {
+    flex-direction: column;
+  }
+
+  .viz-controls {
+    width: calc(100% - 40px);
+    margin: 20px auto;
+    position: static;
+    align-self: center;
+  }
+
+  .viz-canvas-wrapper {
+    min-height: 60vh;
   }
 }
 
